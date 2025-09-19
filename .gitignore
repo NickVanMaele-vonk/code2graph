@@ -1,5 +1,8 @@
 # Project specific exclusions
-.gitexclude/   # user-specific files to be excluded from git
+.gitexclude/   
+cloned-repos/
+graph-data-files/
+temp-analysis/
 
 # Logs
 logs
