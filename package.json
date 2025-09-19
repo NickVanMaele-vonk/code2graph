@@ -5,13 +5,13 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "lint": "eslint ."
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NickVanMaele-vonk/code2graph.git"
   },
-  "lint": "eslint .",
   "keywords": [],
   "author": "",
   "license": "ISC",
