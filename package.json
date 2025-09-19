@@ -11,6 +11,7 @@
     "type": "git",
     "url": "git+https://github.com/NickVanMaele-vonk/code2graph.git"
   },
+  "lint": "eslint .",
   "keywords": [],
   "author": "",
   "license": "ISC",
