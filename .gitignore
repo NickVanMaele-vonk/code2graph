@@ -1,3 +1,6 @@
+# Project specific exclusions
+.gitexclude/   # user-specific files to be excluded from git
+
 # Logs
 logs
 *.log
