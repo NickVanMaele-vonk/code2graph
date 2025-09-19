@@ -1,5 +1,6 @@
 # Syncs all local branches after a pull request is merged on origin/main
 # dev branch is rebased onto main each time the script is run
+# To run from the project root, run ./syncall.sh in a bash terminal
 
 #!/bin/bash
 
