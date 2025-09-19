@@ -1,6 +1,6 @@
 # code2graph
-Visualise software code dependencies when file-level dependencies just aren't detailed enough. 
-This tool analyzes code dependencies on the level of front-end elements, functions, and database tables. 
-The output is a graph starting at 'App-root' and ending with database tables that are either read or written to. 
+Visualise software code dependencies on the level of individual front-end elements, functions, and database tables. 
+The output is JSON file containing nodes and edges of a graph. 
+The top node is 'App-root'. The end nodes are database tables that are either read or written to, or data files. 
 
 Initial focus: React / Typescript.
