@@ -65,5 +65,10 @@ jobs:
         with:
           node-version: 'lts/*'
 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+
       - name: Run CodeQL security scan
         uses: github/codeql-action/analyze@v2
