@@ -11,11 +11,19 @@
     "type": "git",
     "url": "git+https://github.com/NickVanMaele-vonk/code2graph.git"
   },
+  "lint": "eslint .",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/NickVanMaele-vonk/code2graph/issues"
   },
-  "homepage": "https://github.com/NickVanMaele-vonk/code2graph#readme"
+  "homepage": "https://github.com/NickVanMaele-vonk/code2graph#readme",
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^16.4.0",
+    "typescript-eslint": "^8.44.0"
+  }
 }
