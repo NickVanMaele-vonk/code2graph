@@ -11,4 +11,4 @@ The next layers are UI elements, APIs, functions, etc.
 The end nodes are database tables or data files. 
 
 Initial focus: React / Typescript.
-More languages to follow later. 
+More software languages to follow later. 
