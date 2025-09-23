@@ -50,6 +50,7 @@ A specialized tool that:
 - **GitHub Repository Cloning**: Clone and analyze remote repositories
 - **File System Scanning**: Recursively scan for React/TypeScript files
 - **Multi-format Support**: Handle .tsx, .ts, .jsx, .js files
+- **Security**: ensure read-only view on repo, always use sandbox environment, and never execute repo code
 
 #### 3.1.2 Component Analysis
 - **React Component Detection**: Identify functional components, class components, and hooks
@@ -66,11 +67,12 @@ A specialized tool that:
   - **Node Creation Rules**: Imported components become nodes if used; data arrays/variables become nodes; functions handling data/interaction become nodes; API endpoints normalized with parameters (e.g., :clubid); database tables/views become nodes; conditionally rendered components become nodes; JSX fragments analyzed same as regular JSX
   - **Node Collapse Logic**: Multiple nodes representing same data collapse into one if they lead to same database table
   - **Naming Conventions**: Use import alias for components; use array variable name for data arrays; use function name for functions; use parameterized form for API endpoints
-  - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "API", "route", "database"}
+  - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "middleware", "database"}
   - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports
   - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"calls", "reads", "writes to"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
 - **JSX Element Parsing**: Analyze JSX structure to identify component relationships
 - **Import/Export Mapping**: Track component dependencies and usage
+- **Circular Dependency Detection**: Identify problematic dependency cycles
 
 #### 3.1.3 Dependency Tracing
 - **Frontend-to-API Mapping**: Connect React components to API endpoint calls
@@ -83,26 +85,25 @@ A specialized tool that:
 #### 3.1.4 Dead Code Detection
 - **Dead Code Definition**: Code defined in one location but never called anywhere else in the same repository
 - **Detection Method**: Based on static code analysis within the target repo, detect nodes with no incoming edges (liveCodeScore = 0)
-- **Scope**: App repository only, excluding test files in first version. Test files are files stored in ./test or having a file extension ```.*test*``` or having a filename ```*test*.*```
+- **Scope**: App repository only, excluding test files in first version. Test files are files stored in ./test or have "test" or "tst" in their file name or file extension
 - **Assumption**: Repository is self-contained with no external callers
 - **Examples**: API endpoint `/api/:clubid/persons/` is dead code if defined but never called in the codebase
 - **Scoring Method**: 100 = confirmed incoming edge, meaning that at least one other function or code fragment is calling the current node; 0 = no incoming edge based on static code analysis of repo; scores 1-99 are probability scores to be used in a future version of code2graph that takes into account calls from external code. 
-- **Category**: each node has a label "category" which defines the layer in which the node is active, with possible values {"front end", "API", "route", "database"} (this list of values can be extended when the need arises)
+- **Category**: each node has a label "category" which stores the name of the layer in which the node is active. Possible values are "front end", "middleware", "database". (This list of values can be extended when the need arises)
 
 #### 3.1.5 Output Generation
 - **JSON Format**: Primary structured output format with complete dependency graph
 - **GraphML Format**: For professional graph analysis tools
 - **DOT Format**: For Graphviz visualization
 - **Node Structure**: Every function/informative element = node, function calls = edges
-  - **Edge types**: possible values for EdgetType = {"calls", "reads", "writes to"} where "reads" and "writes to" are used only if the target node is a database table or database view
+- **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders", where "reads" and "writes to" are used only if the target node is a database table or database view
 - **Dead Code Identification**: Nodes with liveCodeScore = 0 (no incoming edges)
 - **Live Code Identification**: Nodes with liveCodeScore = 100 (has incoming edges)
-- **No Separate Dead Code Report**: Dead code is simply nodes with liveCodeScore = 0
+- **Dead Code Report**: List dead codes, i.e., nodes with liveCodeScore = 0
 
 ### 3.2 Secondary Features (Future Releases)
 
 #### 3.2.1 Advanced Analysis
-- **Circular Dependency Detection**: Identify problematic dependency cycles
 - **Code Complexity Metrics**: Calculate coupling and cohesion metrics
 - **Change Impact Analysis**: Predict what breaks when components are modified
 - **Performance Impact Analysis**: Identify components that affect performance
@@ -179,7 +180,7 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
   - Analysis depth settings (front-end, API, routes, database) (default: full stack)
 
 ### 5.3 Error Handling
-- **Memory Management**: Two-tier system with performance warning and memory error limits
+- **Memory Management**: Two-tier system with performance warning (memory at 80%) and memory error (memory at 100% = memory full) 
 - **Performance Warning**: Dialog showing recommended limit vs actual lines of code with Include/Exclude options
 - **Memory Error**: Hard stop with error message and dialog to reconfigure
 - **Long Running Analysis**: If analysis runs a long time, popup alerts user with Continue/Stop button options
@@ -222,10 +223,10 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - **Analysis Depth**: Static analysis only, no runtime behavior analysis
 - **Repository Access**: Requires read access to target repositories
 - **Distribution**: GitHub clone only, no NPM package in first version
-- **Database Analysis**: May postpone database table nodes to later versions if complexity is too high
+- **Database Analysis**: Include nodes for database tables and views
 
 ### 7.2 Business Constraints
-- **Development Timeline**: MVP within 6-8 weeks
+- **Development Timeline**: None
 - **Resource Limitations**: Single developer initially
 - **Open Source**: MIT license, community-driven development
 - **No Commercial Support**: Community support only
@@ -262,15 +263,15 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - Dead code detection
 - JSON output format
 - Command-line interface
+- Graceful interruption: Allow to interrupt analysis and resume at later time
+
 
 ### 9.2 Phase 2 (Months 3-4): Enhanced Analysis
 - Backend API analysis
-- Database schema mapping
 - Multiple output formats
 - Configuration system
 
 ### 9.3 Phase 3 (Months 5-6): Advanced Features
-- Circular dependency detection
 - Code metrics and complexity analysis
 - Web interface
 - CI/CD integration
@@ -290,16 +291,16 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - **Node Properties**: 
   - `id`: Unique identifier
   - `label`: Human-readable name
-  - `type`: Component type (function, API, database table, etc.)
+  - `type`: Component type ("function" | "API" | "table" | "view" | "route" | string)
   - `file`: Source file location
   - `line`: Line number (optional)
   - `liveCodeScore`: Integer 0-100 (0 = dead code, 100 = live code)
   - `datatype`: Data type label (array, list, integer, table, view, etc.)
-  - `category`: Layer category (front end, API, route, database)
+  - `category`: Layer category (front end, middleware, database)
 - **Edge Properties**:
   - `source`: Source node ID
   - `target`: Target node ID
-  - `relationship`: Type of relationship (calls, imports, etc.)
+  - `relationship`: Type of relationship ("imports" | "calls" | "uses" | "reads" | "writes to" | "renders")
 - **Metadata**:
   - Version number of code2graph tool
   - UTC timestamp of output file creation

@@ -22,7 +22,7 @@
 ### 1.2 Success Criteria
 - Successfully analyzes React projects with 100+ components
 - Identifies dead code with >90% accuracy
-- Processes analysis in under 5 minutes for typical projects
+- Typical expected runtime of an analysis to be determined after first tests
 - Generates valid JSON output with complete dependency graph
 - Handles malformed code without crashing
 
@@ -47,6 +47,8 @@
 - [ ] Configure ESLint, Prettier, and TypeScript settings
 - [ ] Set up Jest testing framework
 - [ ] Create basic README and documentation structure
+- [ ] Create template files for global and repo-specific configuration
+- [ ] Set up ability to run analysis in isolated environment (sandbox)
 
 #### Deliverables:
 - Complete project structure
@@ -71,6 +73,7 @@
 - [ ] Set up configuration types
 - [ ] Create error handling types
 - [ ] Add JSDoc documentation for all types
+- [ ] Complete content of global config file and repo-specific config template 
 
 #### Deliverables:
 - Complete type definitions in `src/types/`
@@ -138,12 +141,19 @@
 **Priority**: Critical
 
 #### Tasks:
+- [ ] Input validation for repository URLs
+- [ ] Verify read-only access to repositories
+- [ ] Exclude test files from analysis 
+- [ ] Implement "Include / Exclude" dialog box to determine scope of analysis 
 - [ ] Implement recursive file scanning
 - [ ] Add file type filtering (tsx, ts, jsx, js)
 - [ ] Create ignore pattern support
 - [ ] Add file metadata extraction
 - [ ] Implement progress reporting
+- [ ] Implement analysis log functionality 
+- [ ] Implement memory monitoring system + exit if exceeded
 - [ ] Add file validation
+- [ ] Add file scan progress indicator to progress dialog
 
 #### Deliverables:
 - File scanning system
@@ -166,7 +176,7 @@
 - [ ] Implement basic file parsing
 - [ ] Add error handling for malformed code
 - [ ] Create AST node utilities
-- [ ] Add parsing progress reporting
+- [ ] Add AST parser progress indicator to progress dialog
 
 #### Deliverables:
 - Basic AST parsing functionality
@@ -178,6 +188,30 @@
 - Handles syntax errors gracefully
 - Provides useful AST utilities
 - Shows parsing progress
+
+### 3.4 DependencyAnalyser
+**Duration**: 1 day
+**Priority**: High
+
+#### Tasks:
+- [ ] Process AST output 
+- [ ] DependencyAnalyzer: Trace API calls
+- [ ] DependencyAnalyzer: Analyse Service Dependencies
+- [ ] DependencyAnalyzer: Map database operations
+- [ ] DependencyAnalyzer: Normalize API endpoints
+- [ ] DependencyAnalyzer: Detect circular dependencies in graph and stop processing
+- [ ] Generate dependency analysis output
+- [ ] Implement node label 'category'
+- [ ] Implement node label 'datatype'
+- [ ] Implement API endpoint normalisation logic 
+- [ ] Implement node normalisation logic (merge duplicate nodes)
+
+#### Deliverables:
+- Output analysis in JSON format
+
+#### Acceptance Criteria:
+- Output analysis accuracy versus manual analysis: match > 90% 
+
 
 ---
 
@@ -194,6 +228,7 @@
 - [ ] Identify React hooks usage
 - [ ] Extract component names and locations
 - [ ] Add component type classification
+- [ ] Add React progress indicator to progress dialog
 
 #### Deliverables:
 - Component detection system
@@ -211,12 +246,19 @@
 **Priority**: Critical
 
 #### Tasks:
-- [ ] Parse JSX elements in components
+- [ ] Detect and process AST node type:JSXElement 
+- [ ] Detect and process AST node type:JSXExpressionContainer 
+- [ ] Detect and process AST node type:CallExpression 
+- [ ] Detect and process AST node type:VariableDeclarator/VariableDeclaration 
+- [ ] Detect and process AST node type:ArrowFunctionExpression/FunctionDeclaration 
+- [ ] Detect and process AST node type:MemberExpression 
 - [ ] Identify informative elements (buttons, inputs, etc.)
 - [ ] Extract element properties and event handlers
 - [ ] Map element relationships
+- [ ] Add Edges and EdgeTypes
 - [ ] Add element type classification
 - [ ] Handle complex JSX patterns
+- [ ] Add Javascript progress indicator to progress dialog
 
 #### Deliverables:
 - JSX element parsing
@@ -240,21 +282,22 @@
 - [ ] Track external library usage
 - [ ] Identify circular dependencies
 - [ ] Create dependency graph structure
+- [ ] Add Import/Export progress indicator to progress dialog
 
 #### Deliverables:
 - Import/export analysis
 - Dependency mapping
-- Circular dependency detection
+- Circular dependency detection and resolution 
 
 #### Acceptance Criteria:
 - Correctly extracts all imports/exports
 - Maps component dependencies accurately
-- Identifies circular dependencies
+- Identifies circular dependencies and avoids infinite loops 
 - Creates proper dependency graph structure
 
 ---
 
-## 5. Phase 4: Dead Code Detection (Week 4)
+## 5. Phase 4: Middleware traversal (Week 4)
 
 ### 5.1 Usage Tracking
 **Duration**: 2 days
@@ -262,16 +305,17 @@
 
 #### Tasks:
 - [ ] Track component usage across files
-- [ ] Identify unused components
+- [ ] Identify unused components 
 - [ ] Track function usage
 - [ ] Identify unused functions
 - [ ] Track variable usage
 - [ ] Create usage statistics
+- [ ] Add performance warning for large codebases and trigger "Include / Exclude" dialog
+- [ ] Add pop-up warning for analysis running too long 
 
 #### Deliverables:
-- Usage tracking system
-- Unused component detection
-- Unused function detection
+- Used / unused component detection in middleware
+- Used / unused function detection in middleware
 
 #### Acceptance Criteria:
 - Accurately tracks component usage
@@ -279,27 +323,24 @@
 - Tracks function usage properly
 - Provides usage statistics
 
-### 5.2 Dead Code Analysis
+### 5.2 Alive/Dead Code Analysis
 **Duration**: 2 days
 **Priority**: Critical
 
 #### Tasks:
-- [ ] Implement dead code detection algorithms
-- [ ] Add confidence scoring for dead code
-- [ ] Create dead code reports
-- [ ] Add suggestions for dead code removal
+- [ ] Implement alive/dead code detection algorithms
+- [ ] Add liveCodeScore label (values: 0-100) 
+- [ ] Add comments in code for dead code removal suggestions
 - [ ] Implement false positive filtering
-- [ ] Add dead code categorization
 
 #### Deliverables:
-- Dead code detection system
-- Dead code reporting
-- Confidence scoring
+- Code traversal system
+- Alive/dead code labelling system
+
 
 #### Acceptance Criteria:
 - Detects dead code with >90% accuracy
-- Provides confidence scores
-- Generates useful dead code reports
+- Adds comments in code to mark code as dead 
 - Filters false positives effectively
 
 ### 5.3 API and Backend Analysis
@@ -309,14 +350,16 @@
 #### Tasks:
 - [ ] Analyze API endpoint usage
 - [ ] Track service layer dependencies
-- [ ] Identify unused API endpoints
+- [ ] Identify used/unused API endpoints
 - [ ] Map frontend to backend connections
-- [ ] Add backend dead code detection
+- [ ] Add backend dead code detection and labelling
+- [ ] Add analysis of database views and tables
+- [ ] Add API & Backend progress indicator to progress dialog
 
 #### Deliverables:
 - API usage analysis
 - Backend dead code detection
-- Frontend-backend mapping
+- Frontend-backend mapping (all the way to db tables and views)
 
 #### Acceptance Criteria:
 - Tracks API endpoint usage
@@ -335,14 +378,13 @@
 #### Tasks:
 - [ ] Implement JSON graph generation
 - [ ] Add metadata to JSON output
-- [ ] Create dead code report in JSON
 - [ ] Add output validation
 - [ ] Implement file writing
 - [ ] Add output formatting options
+- [ ] Add Output File Generation progress indicator to progress dialog
 
 #### Deliverables:
 - JSON output generator
-- Dead code JSON reports
 - Output validation system
 
 #### Acceptance Criteria:
@@ -350,72 +392,6 @@
 - Includes all required metadata
 - Validates output format
 - Writes files correctly
-
-### 6.2 GraphML Output Generator
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Implement GraphML generation
-- [ ] Add node and edge attributes
-- [ ] Create GraphML validation
-- [ ] Add GraphML export functionality
-- [ ] Test with GraphML tools
-
-#### Deliverables:
-- GraphML output generator
-- GraphML validation
-- Export functionality
-
-#### Acceptance Criteria:
-- Generates valid GraphML
-- Includes rich node/edge attributes
-- Validates GraphML format
-- Works with GraphML tools
-
-### 6.3 DOT Output Generator
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Implement DOT format generation
-- [ ] Add node and edge formatting
-- [ ] Create DOT validation
-- [ ] Add DOT export functionality
-- [ ] Test with Graphviz
-
-#### Deliverables:
-- DOT output generator
-- DOT validation
-- Export functionality
-
-#### Acceptance Criteria:
-- Generates valid DOT format
-- Formats nodes and edges correctly
-- Validates DOT format
-- Works with Graphviz
-
-### 6.4 Report Generation
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Create human-readable reports
-- [ ] Add dead code summaries
-- [ ] Include analysis statistics
-- [ ] Add recommendations
-- [ ] Create HTML report option
-
-#### Deliverables:
-- Human-readable reports
-- Dead code summaries
-- Analysis statistics
-
-#### Acceptance Criteria:
-- Generates clear, useful reports
-- Includes dead code summaries
-- Provides analysis statistics
-- Offers actionable recommendations
 
 ---
 
@@ -574,26 +550,24 @@
 - [ ] Create release notes
 - [ ] Tag version in Git
 - [ ] Create GitHub release
-- [ ] Publish to NPM
 - [ ] Update documentation
 - [ ] Announce release
 
 #### Deliverables:
-- Released package
 - Release notes
 - Updated documentation
 
 #### Acceptance Criteria:
-- Package is published to NPM
 - Release notes are complete
 - Documentation is updated
 - Release is announced
 
 ### 9.2 Future Planning
+#### 9.2.0 Detail plans for future work
 **Duration**: 1 day
 **Priority**: Medium
 
-#### Tasks:
+##### Tasks:
 - [ ] Plan Phase 2 features
 - [ ] Create roadmap document
 - [ ] Set up issue tracking
@@ -601,16 +575,166 @@
 - [ ] Document lessons learned
 - [ ] Create improvement backlog
 
-#### Deliverables:
+##### Deliverables:
 - Future roadmap
 - Issue tracking setup
 - Lessons learned document
 
-#### Acceptance Criteria:
+##### Acceptance Criteria:
 - Clear roadmap for future development
 - Issue tracking is set up
 - Lessons learned are documented
 - Improvement backlog is created
+
+#### 9.2.1 GraphML Output Generator
+**Duration**: 1 day
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Implement GraphML generation
+- [ ] Add node and edge attributes
+- [ ] Create GraphML validation
+- [ ] Add GraphML export functionality
+- [ ] Test with GraphML tools
+
+##### Deliverables:
+- GraphML output generator
+- GraphML validation
+- Export functionality
+
+##### Acceptance Criteria:
+- Generates valid GraphML
+- Includes rich node/edge attributes
+- Validates GraphML format
+- Works with GraphML tools
+
+#### 9.2.2 DOT Output Generator
+**Duration**: 1 day
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Implement DOT format generation
+- [ ] Add node and edge formatting
+- [ ] Create DOT validation
+- [ ] Add DOT export functionality
+- [ ] Test with Graphviz
+
+##### Deliverables:
+- DOT output generator
+- DOT validation
+- Export functionality
+
+##### Acceptance Criteria:
+- Generates valid DOT format
+- Formats nodes and edges correctly
+- Validates DOT format
+- Works with Graphviz
+
+#### 9.2.3 Report Generation
+**Duration**: 1 day
+**Priority**: High
+
+##### Tasks:
+- [ ] Create human-readable reports
+- [ ] Add dead code summaries
+- [ ] Include analysis statistics
+- [ ] Add recommendations
+- [ ] Create HTML report option
+
+##### Deliverables:
+- Human-readable reports
+- Dead code summaries
+- Analysis statistics
+
+##### Acceptance Criteria:
+- Generates clear, useful reports
+- Includes dead code summaries
+- Provides analysis statistics
+- Offers actionable recommendations
+
+#### 9.2.4 Graceful interruption
+**Duration**: 3 days
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Design how to interrupt / restart analysis
+- [ ] Implement graceful interruption in code
+- [ ] Test graceful interruption 
+
+##### Deliverables:
+- code2graph analysis can be stopped and resumed without errors
+
+##### Acceptance Criteria:
+- Immediate response to interruption signal
+- Showing status "Interrupting..." with a progress bar
+- Interrupt gracefully so that restart is possible
+
+
+#### 9.2.5 File streaming
+**Duration**: 5 days
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Design how to process files in chunks (large codebases)
+- [ ] Implement file chunking / file streaming 
+- [ ] Test file chunking 
+
+##### Deliverables:
+- Ability to chunk large files and process chunks 
+
+##### Acceptance Criteria:
+- Large file chunked and processed successfully 
+
+
+#### 9.2.6 Parallel processing of files
+**Duration**: 5 days
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Design how to process multiple files in parallel
+- [ ] Implement parallel file processing
+- [ ] Test parallel file processing 
+
+##### Deliverables:
+- Ability to process multiple files in parallel 
+
+##### Acceptance Criteria:
+- Multiple files processed at same time successfully 
+
+
+
+#### 9.2.7 AST caching 
+**Duration**: 5 days
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Design how to cache ASTs of files 
+- [ ] Implement caching ASTs of files
+- [ ] Test caching ASTs of files 
+
+##### Deliverables:
+- Ability to cache ASTs of files for repeated analysis runs  
+
+##### Acceptance Criteria:
+- ASTs of files can be re-used several times without rerunning AST 
+
+
+#### 9.2.8 Accessibility 
+**Duration**: 5 days
+**Priority**: Medium
+
+##### Tasks:
+- [ ] Include ARIA roles and attributes (role="progressbar", aria-valuenow, etc.) for screen readers.
+
+
+##### Deliverables:
+- Implement screenreader compatibility 
+
+##### Acceptance Criteria:
+- Ability to use code2cache via screenreader support  
+
+
+
 
 ---
 
@@ -657,7 +781,7 @@
 ### 11.1 Technical Metrics
 - **Analysis Accuracy**: >95% correct component relationship detection
 - **Dead Code Detection**: >90% accuracy in identifying unused code
-- **Performance**: Process 1000+ files in under 2 minutes
+- **Performance**: Expectation to be set after first tests. Preliminary hope: process 10k payload lines in under 1 minute
 - **Reliability**: <1% crash rate on real-world codebases
 
 ### 11.2 Project Metrics

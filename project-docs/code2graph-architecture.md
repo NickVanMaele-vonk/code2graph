@@ -70,7 +70,7 @@ interface ConfigManager {
 ```
 
 **Responsibilities:**
-- Load and validate configuration files
+- Load and validate global and repo-specific configuration files
 - Provide default configurations
 - Handle configuration inheritance
 - Validate analysis rules and patterns
@@ -88,6 +88,7 @@ interface RepositoryManager {
 
 **Responsibilities:**
 - Clone GitHub repositories
+- Validate file formats and software languages used
 - Scan file systems for relevant files
 - Manage temporary storage
 - Clean up after analysis
@@ -179,6 +180,146 @@ interface DeadCodeDetector {
 - Find unused database tables and fields
 - Generate dead code reports
 
+#### 2.2.6 Progress Reporter (`progress-reporter.ts`)
+```typescript
+TODO
+```
+
+**Key elements:**
+- Component-Based Design: Encapsulate the progress bar as reusable React component that accepts progress state as a prop.
+- State Management: Use React state (useState) or global state (e.g., Redux, Context API) to control the progress value, updating it based on app process events.
+- Animation & Visual Feedback: Use CSS transitions or React Native Animated API for smooth progress changes and user feedback.
+- Decoupling UI and Logic: progress calculation and timing logic separate from UI components 
+
+Note: Accessibility via ARIA roles and attributes (role="progressbar", aria-valuenow, etc.) for screen readers.
+
+
+**Responsibilities:**
+- Estimate progress of a component and pass to Progress window in UI
+
+**Best practices:**
+- Use global state for progress if multiple components need it or it reflects app-wide process state.
+- Use animated transitions for better UX.
+- Separate UI rendering from business logic.
+- Handle indeterminate states gracefully with spinner or looping animations if progress % isn’t known.
+- Ensure responsiveness for different device sizes.
+
+**Resources and Examples:**
+- React Native progress bar libraries like react-native-progress offer customizable UI and API.
+- CSS animated progress bars with React use transform: translateX() for smooth sliding.
+- Accessible progress bars should have screen reader-friendly attributes.
+
+**Code example:**
+```typescript
+// Indicative code example
+// NO obligation to use this literally. Instead, see it as a conceptual example. 
+
+import React, { useState, useEffect, FC } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+
+// Define a type for the props
+interface ProgressBarProps {
+  progress: number;
+}
+
+// ProgressBar component with typed props
+const ProgressBar: FC<ProgressBarProps> = ({ progress }) => {
+  return (
+    <View style={styles.container}>
+      <View style={[styles.filler, { width: `${progress}%` }]} />
+      <Text>{progress}%</Text>
+    </View>
+  );
+};
+
+// Parent or container component managing the progress state
+const ParentComponent: FC = () => {
+  const [progress, setProgress] = useState<number>(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setProgress(prev => (prev >= 100 ? 100 : prev + 10));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return <ProgressBar progress={progress} />;
+};
+
+const styles = StyleSheet.create({
+  container: {
+    height: 20,
+    width: '100%',
+    backgroundColor: '#e0e0de',
+    borderRadius: 50,
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  filler: {
+    height: '100%',
+    backgroundColor: '#3b5998',
+  },
+});
+
+export default ParentComponent;
+
+```
+
+
+
+#### 2.2.7 Analysis Logger (`analysis-logger.ts`)
+```typescript
+TODO
+```
+
+**Responsibilities:**
+- Read file path and file name of analyis log file from configuration file
+- Log all status messages, warnings, and errors to the analysis log file
+
+
+#### 2.2.8 Internal Tester (`internal-tester.ts`)
+```typescript
+TODO
+```
+
+**Responsibilities:**
+- Run tests against code2graph data and results
+- Report success or failure
+- Provide comprehensive summary of test cycle
+
+#### 2.2.9 Database Analyser (`db-analyser.ts`)
+```typescript
+TODO
+```
+
+**Responsibilities:**
+- Interpret SQL statement
+- Return tables or views so that nodes can be created
+
+#### 2.2.10 Memory Monitor (`memory-monitor.ts`)
+```typescript
+TODO
+```
+
+**Responsibilities:**
+- Monitor memory usage
+- Warn at warning threshold (80%) and throw error at memory full (100%) 
+
+#### 2.2.11 Error handler (`error-handler.ts`)
+```typescript
+TODO
+```
+
+**Responsibilities:**
+- Catch errors thrown by other components
+- Process errors
+- Log errors to analysis log file
+- Trigger actions
+
+
+
+
+
 ### 2.3 Output Layer (`src/generators/`)
 
 #### 2.3.1 JSON Generator (`json-generator.ts`)
@@ -243,8 +384,8 @@ interface DependencyGraph {
 interface NodeInfo {
   id: string;
   label: string;
-  type: NodeType;
-  category: NodeCategory;
+  nodeType: NodeType; 
+  nodeCategory: NodeCategory;
   datatype: DataType;
   liveCodeScore: number;
   file: string;
@@ -258,15 +399,15 @@ interface EdgeInfo {
   source: string;
   target: string;
   relationship: RelationshipType;
-  type: EdgeType;
   properties: Record<string, any>;
 }
 
 // Type Definitions
 type DataType = "array" | "list" | "integer" | "table" | "view" | string;
-type NodeCategory = "front end" | "API" | "route" | "database";
-type EdgeType = "calls" | "reads" | "writes to";
-type RelationshipType = "imports" | "calls" | "uses" | "renders";
+type NodeType =  "function" | "API" | "table" | "view" | "route" | string;
+type NodeCategory = "front end" | "middleware" | "database";
+type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders";
+
 ```
 
 #### 3.1.2 Component Types
@@ -438,7 +579,7 @@ Analysis Step
 ### 6.1 Memory Management
 - **Streaming Processing**: Process files in chunks to avoid memory issues
 - **Garbage Collection**: Explicit cleanup of large objects
-- **Memory Monitoring**: Track memory usage during analysis. Stop execution when memory is full and exit with error "Fatal error: memory capacity exceeded". 
+- **Memory Monitoring**: Track memory usage during analysis. Warn at 80% full. Stop execution at 100% full and exit with error "Fatal error: memory capacity exceeded". 
 - **File Caching**: Cache parsed ASTs for repeated analysis
 
 ### 6.2 Processing Optimization
