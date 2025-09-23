@@ -27,7 +27,7 @@ Code2Graph is a static analysis tool that creates comprehensive dependency graph
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   CLI Layer     │    │  Analysis Layer │    │  Output Layer   │
 │                 │    │                 │    │                 │
-│ • Command       │───▶│ • Repository    │───▶│ • JSON          │
+│ • Command       │───▶│ • Repository   │───▶│ • JSON          │
 │   Processing    │    │   Cloner        │    │   Generator     │
 │ • Configuration │    │ • File Scanner  │    │ • GraphML       │
 │ • Error         │    │ • AST Parser    │    │   Generator     │
@@ -99,14 +99,18 @@ interface ASTParser {
   extractImports(ast: ASTNode): ImportInfo[];
   extractExports(ast: ASTNode): ExportInfo[];
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
+  extractInformativeElements(ast: ASTNode): InformativeElementInfo[];
+  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
 }
 ```
 
 **Responsibilities:**
-- Parse TypeScript/JavaScript files using Babel
+- Parse TypeScript/JavaScript files using @babel/parser
 - Extract import/export information
 - Parse JSX elements and components
+- Identify specific AST node types: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
 - Handle different file types and syntax
+- Detect informative elements through AST traversal
 
 #### 2.2.3 React Analyzer (`react-analyzer.ts`)
 ```typescript
@@ -115,14 +119,24 @@ interface ReactAnalyzer {
   findInformativeElements(ast: ASTNode): InformativeElement[];
   extractHooks(ast: ASTNode): HookInfo[];
   analyzeProps(ast: ASTNode): PropInfo[];
+  detectDisplayElements(ast: ASTNode): DisplayElementInfo[];
+  detectInputElements(ast: ASTNode): InputElementInfo[];
+  detectDataSources(ast: ASTNode): DataSourceInfo[];
+  detectStateManagement(ast: ASTNode): StateInfo[];
+  collapseDuplicateNodes(nodes: NodeInfo[]): NodeInfo[];
 }
 ```
 
 **Responsibilities:**
 - Identify React components (functional, class, hooks)
-- Find informative elements (buttons, inputs, data displays)
+- Find informative elements using specific AST patterns
+- Detect display elements: JSX elements with JSXExpressionContainer containing props/state data
+- Detect input elements: JSX elements with event handlers (onClick, onChange, onSubmit)
+- Detect data sources: CallExpression patterns for API calls
+- Detect state management: VariableDeclarator with useState patterns
 - Extract component props and state
 - Analyze component lifecycle and effects
+- Collapse duplicate nodes representing same logical concept
 
 #### 2.2.4 Dependency Analyzer (`dependency-analyzer.ts`)
 ```typescript
@@ -131,6 +145,9 @@ interface DependencyAnalyzer {
   traceAPICalls(components: ComponentInfo[]): APICallInfo[];
   analyzeServiceDependencies(services: ServiceInfo[]): ServiceGraph;
   mapDatabaseOperations(services: ServiceInfo[]): DatabaseOperationInfo[];
+  createEdges(nodes: NodeInfo[]): EdgeInfo[];
+  normalizeAPIEndpoints(endpoints: string[]): string[];
+  detectCircularDependencies(graph: DependencyGraph): CycleInfo[];
 }
 ```
 
@@ -139,6 +156,12 @@ interface DependencyAnalyzer {
 - Trace API calls from frontend to backend
 - Analyze service layer dependencies
 - Map database operations and schema usage
+- Create edges with direction from caller to callee, from data to database
+- Create edges with types {"calls", "reads", "writes to"}
+- Handle multiple outgoing edges for event handlers with multiple function calls
+- Handle multiple edges to multiple table nodes for single fetch operations
+- Normalize API endpoints with parameters (e.g., :clubid instead of specific IDs)
+- Detect circular dependencies and stop after second traversal
 
 #### 2.2.5 Dead Code Detector (`dead-code-detector.ts`)
 ```typescript
@@ -222,6 +245,8 @@ interface NodeInfo {
   label: string;
   type: NodeType;
   category: NodeCategory;
+  datatype: DataType;
+  liveCodeScore: number;
   file: string;
   line?: number;
   column?: number;
@@ -236,6 +261,12 @@ interface EdgeInfo {
   type: EdgeType;
   properties: Record<string, any>;
 }
+
+// Type Definitions
+type DataType = "array" | "list" | "integer" | "table" | "view" | string;
+type NodeCategory = "front end" | "API" | "route" | "database";
+type EdgeType = "calls" | "reads" | "writes to";
+type RelationshipType = "imports" | "calls" | "uses" | "renders";
 ```
 
 #### 3.1.2 Component Types
@@ -407,7 +438,7 @@ Analysis Step
 ### 6.1 Memory Management
 - **Streaming Processing**: Process files in chunks to avoid memory issues
 - **Garbage Collection**: Explicit cleanup of large objects
-- **Memory Monitoring**: Track memory usage during analysis
+- **Memory Monitoring**: Track memory usage during analysis. Stop execution when memory is full and exit with error "Fatal error: memory capacity exceeded". 
 - **File Caching**: Cache parsed ASTs for repeated analysis
 
 ### 6.2 Processing Optimization
@@ -418,8 +449,10 @@ Analysis Step
 
 ### 6.3 Scalability
 - **Large Repository Support**: Handle repositories with 10,000+ files
+- **Expected Node Count**: 2,500-3,000 nodes for 100k lines of code
 - **Progress Reporting**: Show analysis progress for long operations
 - **Cancellation**: Allow users to cancel long-running operations
+- **Continue/Stop Dialog**: Popup for long-running analysis with user choice
 - **Resume Capability**: Resume interrupted analysis
 
 ---
@@ -465,10 +498,13 @@ Analysis Step
 ## 9. Deployment Architecture
 
 ### 9.1 Distribution Methods
-- **NPM Package**: Primary distribution method
+Priority for initial versions: 
+- **GitHub Releases**: Tagged releases with changelog
+
+Other possible methods that might be implemented in future but excluded for now:  
+- **NPM Package**: Node.js distribution method
 - **Binary Releases**: Standalone executables for different platforms
 - **Docker Image**: Containerized version for CI/CD
-- **GitHub Releases**: Tagged releases with changelog
 
 ### 9.2 Installation Methods
 ```bash
@@ -514,742 +550,4 @@ chmod +x code2graph
 ---
 
 *This architecture document provides the technical foundation for the code2graph project and will be updated as the system evolves and new requirements emerge.*
-```
 
-Finally, let me create the Project Implementation Plan:
-
-```markdown:.gitexclude/code2graph-project-plan.md
-# Project Implementation Plan
-## Code2Graph - Code Dependency Visualization Tool
-
-### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
-- **Author**: Nick Van Maele
-- **Project**: code2graph
-- **Timeline**: 6-8 weeks for MVP
-
----
-
-## 1. Project Overview
-
-### 1.1 Project Goals
-- Create a command-line tool for analyzing React/TypeScript codebases
-- Generate comprehensive dependency graphs from frontend to database
-- Identify dead code with high accuracy
-- Provide multiple output formats for visualization
-- Build a foundation for future open-source development
-
-### 1.2 Success Criteria
-- Successfully analyzes React projects with 100+ components
-- Identifies dead code with >90% accuracy
-- Processes analysis in under 5 minutes for typical projects
-- Generates valid JSON output with complete dependency graph
-- Handles malformed code without crashing
-
-### 1.3 Project Constraints
-- **Timeline**: 8 weeks for MVP
-- **Resources**: Single developer
-- **Scope**: React/TypeScript focus initially
-- **Quality**: Production-ready code with comprehensive testing
-
----
-
-## 2. Phase 1: Foundation Setup (Week 1)
-
-### 2.1 Project Structure Setup
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Initialize TypeScript project with proper configuration
-- [ ] Set up package.json with all required dependencies
-- [ ] Create directory structure following architecture
-- [ ] Configure ESLint, Prettier, and TypeScript settings
-- [ ] Set up Jest testing framework
-- [ ] Create basic README and documentation structure
-
-#### Deliverables:
-- Complete project structure
-- Working TypeScript build system
-- Basic testing setup
-- Development environment ready
-
-#### Acceptance Criteria:
-- `npm run build` works without errors
-- `npm test` runs successfully
-- All linting passes
-- Project follows TypeScript best practices
-
-### 2.2 Core Type Definitions
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Define core TypeScript interfaces for graph data
-- [ ] Create component information types
-- [ ] Define analysis result types
-- [ ] Set up configuration types
-- [ ] Create error handling types
-- [ ] Add JSDoc documentation for all types
-
-#### Deliverables:
-- Complete type definitions in `src/types/`
-- Type documentation
-- Type validation utilities
-
-#### Acceptance Criteria:
-- All types are properly documented
-- Types cover all planned functionality
-- Type validation works correctly
-- No TypeScript compilation errors
-
-### 2.3 Basic CLI Framework
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Set up Commander.js for CLI interface
-- [ ] Create basic command structure
-- [ ] Implement help and version commands
-- [ ] Add basic error handling
-- [ ] Create configuration loading system
-
-#### Deliverables:
-- Working CLI interface
-- Basic command structure
-- Configuration system
-
-#### Acceptance Criteria:
-- CLI responds to basic commands
-- Help system works correctly
-- Configuration loading functions properly
-- Error messages are user-friendly
-
----
-
-## 3. Phase 2: Repository Analysis (Week 2)
-
-### 3.1 Repository Cloning System
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Implement GitHub repository cloning
-- [ ] Add support for local directory analysis
-- [ ] Create temporary directory management
-- [ ] Add cleanup functionality
-- [ ] Implement error handling for network issues
-- [ ] Add progress reporting for cloning
-
-#### Deliverables:
-- Repository cloning functionality
-- Local directory analysis support
-- Proper cleanup and error handling
-
-#### Acceptance Criteria:
-- Can clone public GitHub repositories
-- Can analyze local directories
-- Properly cleans up temporary files
-- Handles network errors gracefully
-- Shows progress during cloning
-
-### 3.2 File System Scanner
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Implement recursive file scanning
-- [ ] Add file type filtering (tsx, ts, jsx, js)
-- [ ] Create ignore pattern support
-- [ ] Add file metadata extraction
-- [ ] Implement progress reporting
-- [ ] Add file validation
-
-#### Deliverables:
-- File scanning system
-- File filtering and validation
-- Progress reporting
-
-#### Acceptance Criteria:
-- Scans directories recursively
-- Filters files by type correctly
-- Respects ignore patterns
-- Extracts file metadata
-- Shows scanning progress
-
-### 3.3 Basic AST Parser
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Set up Babel parser for TypeScript/JavaScript
-- [ ] Implement basic file parsing
-- [ ] Add error handling for malformed code
-- [ ] Create AST node utilities
-- [ ] Add parsing progress reporting
-
-#### Deliverables:
-- Basic AST parsing functionality
-- Error handling for malformed code
-- AST utility functions
-
-#### Acceptance Criteria:
-- Parses TypeScript and JavaScript files
-- Handles syntax errors gracefully
-- Provides useful AST utilities
-- Shows parsing progress
-
----
-
-## 4. Phase 3: React Component Analysis (Week 3)
-
-### 4.1 Component Detection
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Implement React component identification
-- [ ] Detect functional components
-- [ ] Detect class components
-- [ ] Identify React hooks usage
-- [ ] Extract component names and locations
-- [ ] Add component type classification
-
-#### Deliverables:
-- Component detection system
-- Component classification
-- Component metadata extraction
-
-#### Acceptance Criteria:
-- Identifies all React component types
-- Extracts component names correctly
-- Classifies components by type
-- Handles edge cases (anonymous components, etc.)
-
-### 4.2 JSX Element Analysis
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Parse JSX elements in components
-- [ ] Identify informative elements (buttons, inputs, etc.)
-- [ ] Extract element properties and event handlers
-- [ ] Map element relationships
-- [ ] Add element type classification
-- [ ] Handle complex JSX patterns
-
-#### Deliverables:
-- JSX element parsing
-- Informative element identification
-- Element relationship mapping
-
-#### Acceptance Criteria:
-- Correctly identifies informative elements
-- Extracts element properties
-- Maps element relationships
-- Handles complex JSX patterns
-
-### 4.3 Import/Export Analysis
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Extract import statements
-- [ ] Extract export statements
-- [ ] Map component dependencies
-- [ ] Track external library usage
-- [ ] Identify circular dependencies
-- [ ] Create dependency graph structure
-
-#### Deliverables:
-- Import/export analysis
-- Dependency mapping
-- Circular dependency detection
-
-#### Acceptance Criteria:
-- Correctly extracts all imports/exports
-- Maps component dependencies accurately
-- Identifies circular dependencies
-- Creates proper dependency graph structure
-
----
-
-## 5. Phase 4: Dead Code Detection (Week 4)
-
-### 5.1 Usage Tracking
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Track component usage across files
-- [ ] Identify unused components
-- [ ] Track function usage
-- [ ] Identify unused functions
-- [ ] Track variable usage
-- [ ] Create usage statistics
-
-#### Deliverables:
-- Usage tracking system
-- Unused component detection
-- Unused function detection
-
-#### Acceptance Criteria:
-- Accurately tracks component usage
-- Identifies unused components correctly
-- Tracks function usage properly
-- Provides usage statistics
-
-### 5.2 Dead Code Analysis
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Implement dead code detection algorithms
-- [ ] Add confidence scoring for dead code
-- [ ] Create dead code reports
-- [ ] Add suggestions for dead code removal
-- [ ] Implement false positive filtering
-- [ ] Add dead code categorization
-
-#### Deliverables:
-- Dead code detection system
-- Dead code reporting
-- Confidence scoring
-
-#### Acceptance Criteria:
-- Detects dead code with >90% accuracy
-- Provides confidence scores
-- Generates useful dead code reports
-- Filters false positives effectively
-
-### 5.3 API and Backend Analysis
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Analyze API endpoint usage
-- [ ] Track service layer dependencies
-- [ ] Identify unused API endpoints
-- [ ] Map frontend to backend connections
-- [ ] Add backend dead code detection
-
-#### Deliverables:
-- API usage analysis
-- Backend dead code detection
-- Frontend-backend mapping
-
-#### Acceptance Criteria:
-- Tracks API endpoint usage
-- Identifies unused API endpoints
-- Maps frontend-backend connections
-- Detects backend dead code
-
----
-
-## 6. Phase 5: Output Generation (Week 5)
-
-### 6.1 JSON Output Generator
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Implement JSON graph generation
-- [ ] Add metadata to JSON output
-- [ ] Create dead code report in JSON
-- [ ] Add output validation
-- [ ] Implement file writing
-- [ ] Add output formatting options
-
-#### Deliverables:
-- JSON output generator
-- Dead code JSON reports
-- Output validation system
-
-#### Acceptance Criteria:
-- Generates valid JSON output
-- Includes all required metadata
-- Validates output format
-- Writes files correctly
-
-### 6.2 GraphML Output Generator
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Implement GraphML generation
-- [ ] Add node and edge attributes
-- [ ] Create GraphML validation
-- [ ] Add GraphML export functionality
-- [ ] Test with GraphML tools
-
-#### Deliverables:
-- GraphML output generator
-- GraphML validation
-- Export functionality
-
-#### Acceptance Criteria:
-- Generates valid GraphML
-- Includes rich node/edge attributes
-- Validates GraphML format
-- Works with GraphML tools
-
-### 6.3 DOT Output Generator
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Implement DOT format generation
-- [ ] Add node and edge formatting
-- [ ] Create DOT validation
-- [ ] Add DOT export functionality
-- [ ] Test with Graphviz
-
-#### Deliverables:
-- DOT output generator
-- DOT validation
-- Export functionality
-
-#### Acceptance Criteria:
-- Generates valid DOT format
-- Formats nodes and edges correctly
-- Validates DOT format
-- Works with Graphviz
-
-### 6.4 Report Generation
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Create human-readable reports
-- [ ] Add dead code summaries
-- [ ] Include analysis statistics
-- [ ] Add recommendations
-- [ ] Create HTML report option
-
-#### Deliverables:
-- Human-readable reports
-- Dead code summaries
-- Analysis statistics
-
-#### Acceptance Criteria:
-- Generates clear, useful reports
-- Includes dead code summaries
-- Provides analysis statistics
-- Offers actionable recommendations
-
----
-
-## 7. Phase 6: Testing and Validation (Week 6)
-
-### 7.1 Unit Testing
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Write unit tests for all analyzers
-- [ ] Test output generators
-- [ ] Test CLI functionality
-- [ ] Test error handling
-- [ ] Add test coverage reporting
-- [ ] Achieve >90% test coverage
-
-#### Deliverables:
-- Comprehensive unit test suite
-- Test coverage reports
-- Test documentation
-
-#### Acceptance Criteria:
-- All components have unit tests
-- >90% test coverage achieved
-- Tests cover edge cases
-- Tests are maintainable
-
-### 7.2 Integration Testing
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Test with real React projects
-- [ ] Test end-to-end analysis pipeline
-- [ ] Test with various project structures
-- [ ] Test error scenarios
-- [ ] Validate output accuracy
-- [ ] Performance testing
-
-#### Deliverables:
-- Integration test suite
-- Real project test results
-- Performance benchmarks
-
-#### Acceptance Criteria:
-- Works with real React projects
-- End-to-end pipeline works correctly
-- Handles various project structures
-- Meets performance requirements
-
-### 7.3 Validation with Target Project
-**Duration**: 1 day
-**Priority**: Critical
-
-#### Tasks:
-- [ ] Test with martialarts project
-- [ ] Validate dead code detection accuracy
-- [ ] Check output quality
-- [ ] Gather feedback and iterate
-- [ ] Document known limitations
-
-#### Deliverables:
-- Validation results
-- Known limitations document
-- Improvement recommendations
-
-#### Acceptance Criteria:
-- Successfully analyzes martialarts project
-- Dead code detection is accurate
-- Output is useful and correct
-- Known limitations are documented
-
----
-
-## 8. Phase 7: Polish and Documentation (Week 7)
-
-### 8.1 CLI Polish
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Improve CLI user experience
-- [ ] Add better error messages
-- [ ] Add progress indicators
-- [ ] Improve help documentation
-- [ ] Add configuration examples
-- [ ] Test CLI usability
-
-#### Deliverables:
-- Polished CLI interface
-- Better user experience
-- Improved documentation
-
-#### Acceptance Criteria:
-- CLI is user-friendly
-- Error messages are helpful
-- Progress indicators work
-- Help documentation is complete
-
-### 8.2 Documentation
-**Duration**: 2 days
-**Priority**: High
-
-#### Tasks:
-- [ ] Write comprehensive README
-- [ ] Create usage examples
-- [ ] Document configuration options
-- [ ] Add troubleshooting guide
-- [ ] Create API documentation
-- [ ] Add contribution guidelines
-
-#### Deliverables:
-- Complete documentation
-- Usage examples
-- API documentation
-
-#### Acceptance Criteria:
-- Documentation is comprehensive
-- Examples are clear and useful
-- API is well documented
-- Contribution guidelines are clear
-
-### 8.3 Final Testing
-**Duration**: 2 days
-**Priority**: Critical
-
-#### Tasks:
-- [ ] End-to-end testing
-- [ ] Performance validation
-- [ ] Error handling testing
-- [ ] Cross-platform testing
-- [ ] Final bug fixes
-- [ ] Release preparation
-
-#### Deliverables:
-- Final test results
-- Performance validation
-- Release-ready code
-
-#### Acceptance Criteria:
-- All tests pass
-- Performance requirements met
-- Error handling works correctly
-- Code is release-ready
-
----
-
-## 9. Phase 8: Release and Future Planning (Week 8)
-
-### 9.1 Release Preparation
-**Duration**: 1 day
-**Priority**: High
-
-#### Tasks:
-- [ ] Create release notes
-- [ ] Tag version in Git
-- [ ] Create GitHub release
-- [ ] Publish to NPM
-- [ ] Update documentation
-- [ ] Announce release
-
-#### Deliverables:
-- Released package
-- Release notes
-- Updated documentation
-
-#### Acceptance Criteria:
-- Package is published to NPM
-- Release notes are complete
-- Documentation is updated
-- Release is announced
-
-### 9.2 Future Planning
-**Duration**: 1 day
-**Priority**: Medium
-
-#### Tasks:
-- [ ] Plan Phase 2 features
-- [ ] Create roadmap document
-- [ ] Set up issue tracking
-- [ ] Plan community building
-- [ ] Document lessons learned
-- [ ] Create improvement backlog
-
-#### Deliverables:
-- Future roadmap
-- Issue tracking setup
-- Lessons learned document
-
-#### Acceptance Criteria:
-- Clear roadmap for future development
-- Issue tracking is set up
-- Lessons learned are documented
-- Improvement backlog is created
-
----
-
-## 10. Risk Management
-
-### 10.1 Technical Risks
-
-#### Risk: AST Parsing Complexity
-- **Probability**: Medium
-- **Impact**: High
-- **Mitigation**: Start with simple cases, use proven libraries, extensive testing
-
-#### Risk: Performance Issues
-- **Probability**: Medium
-- **Impact**: Medium
-- **Mitigation**: Performance testing, optimization, streaming processing
-
-#### Risk: Accuracy of Dead Code Detection
-- **Probability**: High
-- **Impact**: High
-- **Mitigation**: Extensive testing, confidence scoring, user feedback
-
-### 10.2 Project Risks
-
-#### Risk: Scope Creep
-- **Probability**: Medium
-- **Impact**: High
-- **Mitigation**: Strict scope management, regular reviews, MVP focus
-
-#### Risk: Timeline Delays
-- **Probability**: Medium
-- **Impact**: Medium
-- **Mitigation**: Buffer time, priority management, regular progress reviews
-
-#### Risk: Quality Issues
-- **Probability**: Low
-- **Impact**: High
-- **Mitigation**: Comprehensive testing, code reviews, quality gates
-
----
-
-## 11. Success Metrics
-
-### 11.1 Technical Metrics
-- **Analysis Accuracy**: >95% correct component relationship detection
-- **Dead Code Detection**: >90% accuracy in identifying unused code
-- **Performance**: Process 1000+ files in under 2 minutes
-- **Reliability**: <1% crash rate on real-world codebases
-
-### 11.2 Project Metrics
-- **Timeline**: Complete MVP within 8 weeks
-- **Quality**: >90% test coverage
-- **Documentation**: Complete user and API documentation
-- **Usability**: Users can run basic analysis without documentation
-
-### 11.3 User Experience Metrics
-- **Setup Time**: <5 minutes from installation to first analysis
-- **Learning Curve**: Basic usage without documentation
-- **Output Quality**: Generated graphs are immediately useful
-
----
-
-## 12. Resource Requirements
-
-### 12.1 Development Resources
-- **Developer**: 1 full-time developer
-- **Timeline**: 8 weeks
-- **Tools**: Development environment, testing tools, documentation tools
-
-### 12.2 Testing Resources
-- **Test Projects**: Real React projects for testing
-- **Test Data**: Various code patterns and edge cases
-- **Performance Testing**: Large repositories for benchmarking
-
-### 12.3 Documentation Resources
-- **Documentation Tools**: Markdown, JSDoc, README
-- **Examples**: Sample projects and outputs
-- **Tutorials**: Step-by-step usage guides
-
----
-
-*This project plan provides a detailed roadmap for implementing the code2graph tool. It will be updated regularly as progress is made and new insights are gained.*
-```
-
-Perfect! I've now created all three documents in the `.gitexclude` directory:
-
-## 📄 **Documents Created:**
-
-1. **`.gitexclude/code2graph-prd.md`** - Product Requirements Document
-   - Complete product specification with features, requirements, and success metrics
-   - Focus on dead code detection and dependency visualization
-
-2. **`.gitexclude/code2graph-architecture.md`** - Architecture Document  
-   - Detailed technical architecture with component design and data models
-   - Technology stack, data flow, and performance considerations
-
-3. **`.gitexclude/code2graph-project-plan.md`** - Project Implementation Plan
-   - 8-week detailed implementation plan with specific tasks and deliverables
-   - Risk management, success metrics, and resource requirements
-
-## 🎯 **Key Highlights:**
-
-**Immediate Next Steps (Week 1):**
-- Set up TypeScript project structure
-- Define core type definitions  
-- Create basic CLI framework
-- Set up testing infrastructure
-
-**Critical Success Factors:**
-- >90% accuracy in dead code detection
-- Process 1000+ files in under 2 minutes
-- Generate valid JSON output with complete dependency graph
-- Handle malformed code gracefully
-
-**Architecture Focus:**
-- Modular design with clear separation of concerns
-- Extensible for future framework support
-- Performance-optimized for large codebases
-- Comprehensive testing strategy
-
-The documents provide a complete foundation for implementing your code2graph tool, with detailed technical sp
