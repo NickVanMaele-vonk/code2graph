@@ -14,8 +14,14 @@ import {
   FileInfo,
   CloneOptions,
   AnalysisError,
-  ValidationResult
+  ValidationResult,
+  FileScanConfig,
+  FileScanResult,
+  FileScanProgress
 } from '../types/index.js';
+import { FileSystemScanner } from './file-system-scanner.js';
+import { AnalysisLogger } from './analysis-logger.js';
+import { MemoryMonitor } from './memory-monitor.js';
 
 /**
  * Repository Manager class
@@ -24,6 +30,9 @@ import {
 export class RepositoryManager {
   private readonly tempDir: string;
   private readonly clonedReposDir: string;
+  private fileSystemScanner?: FileSystemScanner;
+  private logger?: AnalysisLogger;
+  private memoryMonitor?: MemoryMonitor;
 
   /**
    * Constructor initializes temporary directories for repository management
@@ -36,6 +45,18 @@ export class RepositoryManager {
     
     // Ensure directories exist
     this.ensureDirectories();
+  }
+
+  /**
+   * Initializes the repository manager with required dependencies
+   * 
+   * @param logger - Analysis logger for logging operations
+   * @param memoryMonitor - Memory monitor for tracking memory usage
+   */
+  initialize(logger: AnalysisLogger, memoryMonitor: MemoryMonitor): void {
+    this.logger = logger;
+    this.memoryMonitor = memoryMonitor;
+    this.fileSystemScanner = new FileSystemScanner(logger, memoryMonitor);
   }
 
   /**
@@ -166,7 +187,32 @@ export class RepositoryManager {
   }
 
   /**
-   * Analyzes a local directory for relevant files
+   * Analyzes a local directory for relevant files using enhanced file system scanner
+   * Scans file system recursively with comprehensive filtering and validation
+   * 
+   * @param directory - Directory path to scan
+   * @param config - File scanning configuration
+   * @param progressCallback - Optional progress callback for file scanning
+   * @returns Promise<FileScanResult> - Comprehensive file scanning results
+   */
+  async scanFilesEnhanced(
+    directory: string, 
+    config: FileScanConfig,
+    progressCallback?: (progress: FileScanProgress) => void
+  ): Promise<FileScanResult> {
+    if (!this.fileSystemScanner) {
+      throw new Error('RepositoryManager not initialized. Call initialize() first.');
+    }
+
+    if (progressCallback) {
+      this.fileSystemScanner.setProgressCallback(progressCallback);
+    }
+
+    return await this.fileSystemScanner.scanFiles(directory, config);
+  }
+
+  /**
+   * Analyzes a local directory for relevant files (legacy method for backward compatibility)
    * Scans file system recursively and extracts file metadata
    * 
    * @param directory - Directory path to scan

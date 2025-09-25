@@ -92,3 +92,85 @@ export interface ValidationResult {
   errors: AnalysisError[];
   warnings: AnalysisError[];
 }
+
+/**
+ * File scanning configuration interface
+ */
+export interface FileScanConfig {
+  includePatterns: string[];
+  excludePatterns: string[];
+  maxFileSize: number;
+  maxFiles: number;
+  excludeTestFiles: boolean;
+  customExclusions: string[];
+}
+
+/**
+ * File scanning result interface
+ */
+export interface FileScanResult {
+  files: FileInfo[];
+  totalFiles: number;
+  totalSize: number;
+  excludedFiles: number;
+  errors: AnalysisError[];
+  warnings: AnalysisError[];
+}
+
+/**
+ * Analysis logger interface
+ */
+export interface AnalysisLogger {
+  logInfo(message: string, context?: Record<string, unknown>): void;
+  logWarning(message: string, context?: Record<string, unknown>): void;
+  logError(message: string, context?: Record<string, unknown>): void;
+  getLogPath(): string;
+}
+
+/**
+ * Memory monitoring interface
+ */
+export interface MemoryMonitor {
+  getCurrentUsage(): number;
+  getUsagePercentage(): number;
+  checkMemoryWarning(): boolean;
+  checkMemoryError(): boolean;
+  getMemoryInfo(): MemoryInfo;
+}
+
+/**
+ * Memory information interface
+ */
+export interface MemoryInfo {
+  used: number;
+  total: number;
+  percentage: number;
+  warningThreshold: number;
+  errorThreshold: number;
+}
+
+/**
+ * Include/Exclude dialog configuration
+ */
+export interface IncludeExcludeConfig {
+  recommendedLimit: number;
+  currentLinesOfCode: number;
+  fileTypes: {
+    gitignore: boolean;
+    frontend: boolean;
+    middleware: boolean;
+    database: boolean;
+  };
+}
+
+/**
+ * Progress reporting for file scanning
+ */
+export interface FileScanProgress {
+  step: 'scanning' | 'validating' | 'filtering';
+  current: number;
+  total: number;
+  percentage: number;
+  message: string;
+  currentFile?: string;
+}

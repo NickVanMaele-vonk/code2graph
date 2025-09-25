@@ -5,7 +5,10 @@
 
 import { Command } from 'commander';
 import { RepositoryManager } from './analyzers/repository-manager.js';
-import { ProgressInfo, CLIAnalysisOptions } from './types/index.js';
+import { AnalysisLogger } from './analyzers/analysis-logger.js';
+import { MemoryMonitor } from './analyzers/memory-monitor.js';
+import { ConfigurationManager } from './analyzers/configuration-manager.js';
+import { ProgressInfo, CLIAnalysisOptions, FileScanProgress } from './types/index.js';
 
 /**
  * Main CLI class
@@ -13,10 +16,16 @@ import { ProgressInfo, CLIAnalysisOptions } from './types/index.js';
  */
 class Code2GraphCLI {
   private repositoryManager: RepositoryManager;
+  private logger: AnalysisLogger;
+  private memoryMonitor: MemoryMonitor;
+  private configManager: ConfigurationManager;
   private program: Command;
 
   constructor() {
     this.repositoryManager = new RepositoryManager();
+    this.logger = new AnalysisLogger(''); // Will be initialized with actual repo URL
+    this.memoryMonitor = new MemoryMonitor();
+    this.configManager = new ConfigurationManager();
     this.program = new Command();
     this.setupCommands();
   }
@@ -64,7 +73,7 @@ class Code2GraphCLI {
 
   /**
    * Analyzes a repository
-   * Main analysis workflow following Phase 2.1 requirements
+   * Main analysis workflow following Phase 2.2 requirements
    * 
    * @param repoUrl - Repository URL to analyze
    * @param options - Analysis options from CLI command
@@ -75,6 +84,21 @@ class Code2GraphCLI {
       console.log(`📁 Repository: ${repoUrl}`);
       console.log(`📊 Output format: ${options.format}`);
       console.log(`📄 Output file: ${options.output}`);
+
+      // Initialize logger with repository URL
+      this.logger = new AnalysisLogger(repoUrl);
+      await this.logger.logAnalysisStart(repoUrl, '');
+
+      // Load configurations
+      console.log('\n⚙️  Loading configuration...');
+      const globalConfigResult = await this.configManager.loadGlobalConfig();
+      if (!globalConfigResult.isValid) {
+        console.error('❌ Failed to load global configuration:', globalConfigResult.errors);
+        process.exit(1);
+      }
+
+      // Initialize repository manager with dependencies
+      this.repositoryManager.initialize(this.logger, this.memoryMonitor);
 
       // Create progress callback for repository cloning
       const progressCallback = (progress: ProgressInfo) => {
@@ -103,25 +127,68 @@ class Code2GraphCLI {
         console.log(`🔗 Commit: ${repoInfo.commit}`);
       }
 
-      // Scan files in the repository
-      console.log('\n🔍 Scanning files...');
-      const files = await this.repositoryManager.scanFiles(repoInfo.path);
-      console.log(`✅ Found ${files.length} relevant files`);
+      // Get file scanning configuration
+      const fileScanConfig = this.configManager.getFileScanConfig();
+      await this.logger.logConfiguration(fileScanConfig as unknown as Record<string, unknown>);
 
-      // TODO: Implement file analysis (Phase 2.2)
-      console.log('\n⚠️  File analysis not yet implemented (Phase 2.2)');
+      // Enhanced file scanning with progress reporting
+      console.log('\n🔍 Scanning files with enhanced filtering...');
+      const fileScanProgressCallback = (progress: FileScanProgress) => {
+        console.log(`⏳ ${progress.message} (${progress.percentage}%)`);
+        if (progress.currentFile) {
+          console.log(`   📄 Processing: ${progress.currentFile}`);
+        }
+      };
+
+      const scanResult = await this.repositoryManager.scanFilesEnhanced(
+        repoInfo.path,
+        fileScanConfig,
+        fileScanProgressCallback
+      );
+
+      console.log(`✅ File scanning completed:`);
+      console.log(`   📁 Files found: ${scanResult.files.length}`);
+      console.log(`   📊 Total size: ${Math.round(scanResult.totalSize / 1024)} KB`);
+      console.log(`   🚫 Excluded files: ${scanResult.excludedFiles}`);
       
+      if (scanResult.errors.length > 0) {
+        console.log(`   ⚠️  Errors: ${scanResult.errors.length}`);
+        scanResult.errors.forEach(error => {
+          console.log(`      - ${error.message}`);
+        });
+      }
+
+      if (scanResult.warnings.length > 0) {
+        console.log(`   ⚠️  Warnings: ${scanResult.warnings.length}`);
+        scanResult.warnings.forEach(warning => {
+          console.log(`      - ${warning.message}`);
+        });
+      }
+
+      // Log analysis completion
+      await this.logger.logAnalysisComplete({
+        filesFound: scanResult.files.length,
+        totalSize: scanResult.totalSize,
+        excludedFiles: scanResult.excludedFiles,
+        errors: scanResult.errors.length,
+        warnings: scanResult.warnings.length
+      });
+
       // TODO: Implement dependency analysis (Phase 2.3)
-      console.log('⚠️  Dependency analysis not yet implemented (Phase 2.3)');
+      console.log('\n⚠️  Dependency analysis not yet implemented (Phase 2.3)');
       
       // TODO: Implement output generation (Phase 2.4)
       console.log('⚠️  Output generation not yet implemented (Phase 2.4)');
 
       console.log('\n🎉 Analysis completed successfully!');
       console.log(`📄 Results will be saved to: ${options.output}`);
+      console.log(`📋 Analysis log: ${this.logger.getLogPath()}`);
 
     } catch (error) {
       console.error('❌ Analysis failed:', error);
+      if (this.logger) {
+        await this.logger.logError('Analysis failed', { error: error instanceof Error ? error.message : String(error) });
+      }
       process.exit(1);
     } finally {
       // Clean up temporary files
