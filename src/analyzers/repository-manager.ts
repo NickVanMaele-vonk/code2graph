@@ -6,6 +6,7 @@
 
 import { simpleGit, SimpleGit, SimpleGitOptions } from 'simple-git';
 import * as fs from 'fs-extra';
+import * as fsBuiltin from 'node:fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import {
@@ -68,7 +69,10 @@ export class RepositoryManager {
       // Validate repository URL
       const validation = this.validateRepositoryUrl(url);
       if (!validation.isValid) {
-        throw new Error(`Invalid repository URL: ${validation.errors.map(e => e.message).join(', ')}`);
+        // Business logic: Throw the specific validation error message that tests expect
+        // This ensures proper error handling and maintains test compatibility
+        const errorMessage = validation.errors.map(e => e.message).join(', ');
+        throw new Error(errorMessage);
       }
 
       // Generate target path if not provided
@@ -135,8 +139,20 @@ export class RepositoryManager {
       return repoInfo;
 
     } catch (error) {
-      // Handle different types of errors with appropriate error handling
+      // Business logic: Only wrap actual cloning/git errors in "Fatal error" messages
+      // Validation errors should pass through unchanged to maintain test compatibility
       if (error instanceof Error) {
+        // Check if this is a validation error (contains our specific validation messages)
+        const isValidationError = error.message.includes('Only GitHub repositories') ||
+                                  error.message.includes('Invalid repository URL') ||
+                                  error.message.includes('Invalid GitHub repository URL format');
+        
+        if (isValidationError) {
+          // Re-throw validation errors unchanged - tests expect these specific messages
+          throw error;
+        }
+        
+        // Handle actual cloning/git errors with appropriate error messages
         if (error.message.includes('not found') || error.message.includes('does not exist')) {
           throw new Error(`Fatal error: repository not found. Please check the URL and try again.`);
         } else if (error.message.includes('timeout') || error.message.includes('network')) {
@@ -164,7 +180,7 @@ export class RepositoryManager {
         throw new Error(`Directory does not exist: ${directory}`);
       }
 
-      const stats = await fs.stat(directory);
+      const stats = await fsBuiltin.stat(directory);
       if (!stats.isDirectory()) {
         throw new Error(`Path is not a directory: ${directory}`);
       }
@@ -194,7 +210,7 @@ export class RepositoryManager {
     files: FileInfo[]
   ): Promise<void> {
     try {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const entries = await fsBuiltin.readdir(dir, { withFileTypes: true });
 
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
@@ -242,6 +258,8 @@ export class RepositoryManager {
 
   /**
    * Checks if a filename matches any of the specified patterns
+   * Business logic: Handle both filename-only and path-based glob patterns
+   * This ensures files like 'test.ts' match patterns like `**\/*.ts` when scanning directories
    * 
    * @param filename - File name to check
    * @param patterns - Patterns to match against
@@ -250,10 +268,25 @@ export class RepositoryManager {
   private matchesPattern(filename: string, patterns: string[]): boolean {
     return patterns.some(pattern => {
       if (pattern.includes('*')) {
-        // Simple glob pattern matching
-        const regex = new RegExp(pattern.replace(/\*/g, '.*'));
-        return regex.test(filename);
+        // Business logic: Handle glob patterns with proper regex conversion
+        // Key insight: When scanning files, we get just filenames, so **/*.ts should match test.ts
+        
+        // First, escape dots in the original pattern (but preserve the * wildcards)
+        let escapedPattern = pattern.replace(/\./g, '\\.');
+        
+        // Handle ** (any directory depth) - for filename-only matching, this becomes optional
+        escapedPattern = escapedPattern.replace(/\*\*\//g, '(?:.*\/)?');
+        
+        // Handle single * (any characters except path separators)
+        escapedPattern = escapedPattern.replace(/\*/g, '[^/]*');
+        
+        // Create regex with anchors to match the entire filename
+        const regex = new RegExp(`^${escapedPattern}$`);
+        
+        // Test both the filename directly and as if it were at the end of a path
+        return regex.test(filename) || regex.test(`/${filename}`);
       }
+      // For patterns without *, check if filename ends with the pattern
       return filename.endsWith(pattern);
     });
   }
@@ -266,7 +299,7 @@ export class RepositoryManager {
    */
   private async extractFileInfo(filePath: string): Promise<FileInfo> {
     try {
-      const stats = await fs.stat(filePath);
+      const stats = await fsBuiltin.stat(filePath);
       const ext = path.extname(filePath);
       const name = path.basename(filePath);
 
@@ -328,7 +361,7 @@ export class RepositoryManager {
       if (urlObj.hostname !== 'github.com') {
         errors.push({
           type: 'validation',
-          message: 'Only GitHub repositories (github.com) are supported'
+          message: 'Only GitHub repositories are supported'
         });
       }
 
@@ -346,14 +379,14 @@ export class RepositoryManager {
       if (pathParts.length < 2) {
         errors.push({
           type: 'validation',
-          message: 'Invalid GitHub repository URL format. Expected: https://github.com/owner/repo'
+          message: 'Invalid GitHub repository URL format'
         });
       }
 
     } catch {
       errors.push({
         type: 'validation',
-        message: 'Invalid URL format'
+        message: 'Invalid repository URL'
       });
     }
 

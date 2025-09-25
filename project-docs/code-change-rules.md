@@ -5,5 +5,6 @@ When making code changes, follow these instructions:
 * Do not make assumptions. Instead, if you lack information, stop and ask me.
 * If you update one part of the code, ensure that you also update all the dependent other parts of the code, including those in other files. For example, if you update function 'A' in 'file1.ts', then be sure to also update any code in other files which are called by function 'A' or which call function 'A'. 
 * When changing code, insert comments which explain the context, the business logic, and the reasoning for changing this code. 
+* If you modify code or create new code, analyse which code or which imports become obsolete, and mark them as such via code comments. Also check if any files or folders in the project become obsolete, and tell me what they are, but do not delete any files or folders. 
 * Before changing a database, take a back-up or document the detailed schema so that a roll-back is possible if things go wrong. 
 * Read '.\project-docs\code2graph-prd.md', '.\project-docs\code2graph-architecture.md', and '.\project-docs\code2graph-project-plan.md' to understand the context and overall goal. If you detect inconsistencies between these documents and my current request, stop, describe the inconsistency, and ask me for more information. 

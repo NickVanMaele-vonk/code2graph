@@ -7,7 +7,7 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { RepositoryManager } from '../src/analyzers/repository-manager.js';
+import { RepositoryManager } from '../dist/analyzers/repository-manager.js';
 
 describe('RepositoryManager', () => {
   let repositoryManager;
@@ -84,9 +84,10 @@ describe('RepositoryManager', () => {
       
       try {
         // Create test files
-        await fs.writeFile(path.join(testDir, 'test.ts'), 'console.log("test");');
-        await fs.writeFile(path.join(testDir, 'test.js'), 'console.log("test");');
-        await fs.writeFile(path.join(testDir, 'test.txt'), 'not a code file');
+        // Business logic: Use fs.outputFile from fs-extra which creates directories and writes files
+        await fs.outputFile(path.join(testDir, 'test.ts'), 'console.log("test");');
+        await fs.outputFile(path.join(testDir, 'test.js'), 'console.log("test");');
+        await fs.outputFile(path.join(testDir, 'test.txt'), 'not a code file');
 
         const files = await repositoryManager.scanFiles(testDir);
         
@@ -107,8 +108,9 @@ describe('RepositoryManager', () => {
       await fs.ensureDir(path.join(testDir, 'node_modules'));
       
       try {
-        await fs.writeFile(path.join(testDir, 'test.ts'), 'console.log("test");');
-        await fs.writeFile(path.join(testDir, 'node_modules', 'package.ts'), 'should be excluded');
+        // Business logic: Use fs.outputFile from fs-extra which creates directories and writes files
+        await fs.outputFile(path.join(testDir, 'test.ts'), 'console.log("test");');
+        await fs.outputFile(path.join(testDir, 'node_modules', 'package.ts'), 'should be excluded');
 
         const files = await repositoryManager.scanFiles(testDir);
         
@@ -135,7 +137,8 @@ describe('RepositoryManager', () => {
     test('should clean up specific path', async () => {
       const testDir = path.join(process.cwd(), 'test-temp-cleanup');
       await fs.ensureDir(testDir);
-      await fs.writeFile(path.join(testDir, 'test.txt'), 'test content');
+      // Business logic: Use fs.outputFile from fs-extra which creates directories and writes files
+      await fs.outputFile(path.join(testDir, 'test.txt'), 'test content');
       
       assert(await fs.pathExists(testDir));
       
