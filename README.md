@@ -1,6 +1,18 @@
 # Code2Graph
 
-Code2Graph is a command-line tool that analyzes React/TypeScript codebases to create comprehensive dependency graphs and identify dead code.
+Code2Graph is a command-line tool that analyzes React/TypeScript codebases to create comprehensive dependency graphs on the level of individual front-end elements, functions, and database tables. 
+
+The output is a JSON file containing nodes and edges of a graph. 
+This serves as input for a graph visualisation tool. 
+
+In the graph, the top node is 'App-root'. 
+The next layers are UI elements, APIs, functions, etc. 
+The end nodes are database tables or data files. 
+
+Dead code shows up as nodes with no incoming edges. 
+
+Initial focus: React / Typescript.
+More software languages to follow later. 
 
 ## Current Status
 
@@ -131,17 +143,9 @@ ISC License - see LICENSE file for details.
 ---
 
 **Note**: This is Phase 2.1 implementation focusing on repository cloning. Additional analysis features will be implemented in subsequent phases.
-# author: Nick Van Maele
-# date of first commit: 2025-09-19
 
-Visualises software code dependencies on the level of individual front-end elements, functions, and database tables. 
 
-The output is a JSON file containing nodes and edges of a graph. 
-This serves as input for a graph visualisation tool. 
+### author: Nick Van Maele
+### date of first commit: 2025-09-19
 
-In the graph, the top node is 'App-root'. 
-The next layers are UI elements, APIs, functions, etc. 
-The end nodes are database tables or data files. 
 
-Initial focus: React / Typescript.
-More software languages to follow later. 
