@@ -79,13 +79,18 @@ export class RepositoryManager {
       await fs.ensureDir(repoPath);
 
       // Configure git options for secure, read-only cloning
+      // SimpleGitOptions interface requires config and trimmed properties
       const gitOptions: SimpleGitOptions = {
         baseDir: repoPath,
         binary: 'git',
         maxConcurrentProcesses: 1,
         timeout: {
           block: options.timeout || 300000 // 5 minutes default timeout
-        }
+        },
+        // Required by SimpleGitOptions interface - config array for git configuration
+        config: [],
+        // Required by SimpleGitOptions interface - trimmed output flag
+        trimmed: false
       };
 
       const git: SimpleGit = simpleGit(gitOptions);
@@ -306,6 +311,7 @@ export class RepositoryManager {
   /**
    * Validates a repository URL
    * Ensures URL is a valid GitHub repository URL
+   * Security: Validates hostname to prevent URL injection attacks
    * 
    * @param url - Repository URL to validate
    * @returns ValidationResult - Validation result with errors if any
@@ -315,22 +321,33 @@ export class RepositoryManager {
     const warnings: AnalysisError[] = [];
 
     try {
-      // Basic URL validation
-      new URL(url);
+      // Parse URL to validate format and extract components
+      const urlObj = new URL(url);
       
-      // Check if it's a GitHub URL
-      if (!url.includes('github.com')) {
+      // Security: Validate hostname exactly matches github.com to prevent subdomain/path injection
+      // This prevents malicious URLs like 'evil.com/github.com/repo' or 'github.com.evil.com/repo'
+      if (urlObj.hostname !== 'github.com') {
         errors.push({
           type: 'validation',
-          message: 'Only GitHub repositories are supported'
+          message: 'Only GitHub repositories (github.com) are supported'
         });
       }
 
       // Check if it's an HTTPS URL (more secure than SSH for public repos)
-      if (!url.startsWith('https://')) {
+      if (urlObj.protocol !== 'https:') {
         warnings.push({
           type: 'validation',
           message: 'HTTPS URLs are recommended for better security'
+        });
+      }
+
+      // Additional security: Validate path format for GitHub repository structure
+      // GitHub repo URLs should be in format: /owner/repo or /owner/repo.git
+      const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
+      if (pathParts.length < 2) {
+        errors.push({
+          type: 'validation',
+          message: 'Invalid GitHub repository URL format. Expected: https://github.com/owner/repo'
         });
       }
 

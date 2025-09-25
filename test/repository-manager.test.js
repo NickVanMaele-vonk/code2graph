@@ -35,7 +35,7 @@ describe('RepositoryManager', () => {
         await repositoryManager.cloneRepository('https://gitlab.com/user/repo');
         assert.fail('Should have thrown an error for non-GitHub URL');
       } catch (error) {
-        assert(error.message.includes('Only GitHub repositories are supported'));
+        assert(error.message.includes('Only GitHub repositories'));
       }
     });
 
@@ -45,6 +45,33 @@ describe('RepositoryManager', () => {
         assert.fail('Should have thrown an error for invalid URL');
       } catch (error) {
         assert(error.message.includes('Invalid repository URL'));
+      }
+    });
+
+    test('should reject malicious URLs with github.com in path', async () => {
+      try {
+        await repositoryManager.cloneRepository('https://evil.com/github.com/user/repo');
+        assert.fail('Should have thrown an error for malicious URL with github.com in path');
+      } catch (error) {
+        assert(error.message.includes('Only GitHub repositories'));
+      }
+    });
+
+    test('should reject malicious URLs with github.com subdomain', async () => {
+      try {
+        await repositoryManager.cloneRepository('https://github.com.evil.com/user/repo');
+        assert.fail('Should have thrown an error for malicious URL with github.com subdomain');
+      } catch (error) {
+        assert(error.message.includes('Only GitHub repositories'));
+      }
+    });
+
+    test('should reject URLs with invalid GitHub path format', async () => {
+      try {
+        await repositoryManager.cloneRepository('https://github.com/user');
+        assert.fail('Should have thrown an error for invalid GitHub path format');
+      } catch (error) {
+        assert(error.message.includes('Invalid GitHub repository URL format'));
       }
     });
   });
