@@ -29,21 +29,6 @@ export class AnalysisLogger implements IAnalysisLogger {
     const repoName = this.extractRepoName(repoUrl);
     this.logDir = path.join(process.cwd(), 'log');
     this.logPath = path.join(this.logDir, `${repoName}-analysis.log`);
-    
-    // Ensure log directory exists
-    this.ensureLogDirectory();
-  }
-
-  /**
-   * Ensures log directory exists
-   * Creates ./log directory if it doesn't exist
-   */
-  private async ensureLogDirectory(): Promise<void> {
-    try {
-      await fs.ensureDir(this.logDir);
-    } catch (error) {
-      console.warn(`Warning: Failed to create log directory: ${error}`);
-    }
   }
 
   /**
@@ -95,6 +80,9 @@ export class AnalysisLogger implements IAnalysisLogger {
    */
   private async writeLogEntry(level: string, message: string, context?: Record<string, unknown>): Promise<void> {
     try {
+      // Ensure log directory exists before writing
+      await fs.ensureDir(this.logDir);
+      
       const timestamp = new Date().toISOString();
       const contextStr = context ? ` | Context: ${JSON.stringify(context)}` : '';
       const logEntry = `[${timestamp}] ${level}: ${message}${contextStr}\n`;
