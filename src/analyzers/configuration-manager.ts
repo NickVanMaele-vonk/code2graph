@@ -70,8 +70,7 @@ export class ConfigurationManager {
     } catch (error) {
       const analysisError: AnalysisError = {
         type: 'system',
-        message: `Error loading global configuration: ${error}`,
-        stack: error instanceof Error ? error.stack : undefined
+        message: `Error loading global configuration: ${error instanceof Error ? error.message : String(error)}`
       };
       return {
         isValid: false,
@@ -117,8 +116,7 @@ export class ConfigurationManager {
     } catch (error) {
       const analysisError: AnalysisError = {
         type: 'system',
-        message: `Error loading repository configuration: ${error}`,
-        stack: error instanceof Error ? error.stack : undefined
+        message: `Error loading repository configuration: ${error instanceof Error ? error.message : String(error)}`
       };
       return {
         isValid: false,
