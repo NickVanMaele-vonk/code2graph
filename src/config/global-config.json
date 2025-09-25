@@ -1,0 +1,27 @@
+{
+  "maxAnalysisRuntime": 300000,
+  "defaultOutputFormat": "json",
+  "memoryWarningThreshold": 0.8,
+  "memoryErrorThreshold": 1.0,
+  "maxFileSize": 10485760,
+  "maxFiles": 500,
+  "maxLinesOfCode": 100000,
+  "timeout": 300000,
+  "includePatterns": [
+    "**/*.ts",
+    "**/*.tsx", 
+    "**/*.js",
+    "**/*.jsx"
+  ],
+  "excludePatterns": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/*.test.*",
+    "**/*.spec.*"
+  ]
+}

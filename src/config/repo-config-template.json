@@ -1,0 +1,18 @@
+{
+  "repositoryUrl": "",
+  "excludeFiles": [],
+  "excludeFolders": [],
+  "outputFormat": "",
+  "analysisDepth": {
+    "frontend": true,
+    "middleware": true,
+    "database": true
+  },
+  "customPatterns": {
+    "include": [],
+    "exclude": []
+  },
+  "branch": "",
+  "commit": "",
+  "outputPath": "./graph-output.json"
+}
