@@ -271,11 +271,12 @@ export class RepositoryManager {
         // Business logic: Handle glob patterns with proper regex conversion
         // Key insight: When scanning files, we get just filenames, so **/*.ts should match test.ts
         
-        // First, escape dots in the original pattern (but preserve the * wildcards)
-        let escapedPattern = pattern.replace(/\./g, '\\.');
+        // Business logic: Escape regex metacharacters to prevent injection and handle Windows paths
+        // Security: Escape backslashes first to prevent double-escaping issues
+        let escapedPattern = pattern.replace(/\\/g, '\\\\').replace(/\./g, '\\.');
         
         // Handle ** (any directory depth) - for filename-only matching, this becomes optional
-        escapedPattern = escapedPattern.replace(/\*\*\//g, '(?:.*\/)?');
+        escapedPattern = escapedPattern.replace(/\*\*\//g, '(?:.*/)?');
         
         // Handle single * (any characters except path separators)
         escapedPattern = escapedPattern.replace(/\*/g, '[^/]*');
