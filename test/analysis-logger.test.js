@@ -135,8 +135,15 @@ describe('AnalysisLogger', () => {
       const logPath = logger.getLogPath();
       const logContent = await fsBuiltin.readFile(logPath, 'utf-8');
       assert(logContent.includes('Analysis started'));
-      assert(logContent.includes(repoUrl));
-      assert(logContent.includes(repoPath));
+      
+      // Parse the log content to safely check for the repository URL
+      const logLines = logContent.split('\n');
+      const analysisStartLine = logLines.find(line => line.includes('Analysis started'));
+      assert(analysisStartLine, 'Analysis start log entry not found');
+      
+      // Check that the log entry contains the expected repository URL in the context
+      assert(analysisStartLine.includes('"repositoryUrl":"https://github.com/testuser/testrepo"'), 'Repository URL not found in log context');
+      assert(analysisStartLine.includes('"repositoryPath":"/path/to/repo"'), 'Repository path not found in log context');
     });
 
     test('should log analysis completion', async () => {
