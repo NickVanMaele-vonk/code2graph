@@ -61,10 +61,6 @@ export class ConfigurationManager {
       // Validate global configuration
       const validation = this.validateGlobalConfig(this.globalConfig as Record<string, unknown>);
       
-      if (validation.isValid) {
-        console.log('✅ Global configuration loaded successfully');
-      }
-
       return validation;
 
     } catch (error) {
@@ -107,10 +103,6 @@ export class ConfigurationManager {
       // Validate repository configuration
       const validation = this.validateRepoConfig(this.repoConfig as Record<string, unknown>);
       
-      if (validation.isValid) {
-        console.log('✅ Repository configuration loaded successfully');
-      }
-
       return validation;
 
     } catch (error) {
@@ -374,7 +366,6 @@ export class ConfigurationManager {
     };
 
     await fsBuiltin.writeFile(outputPath, JSON.stringify(template, null, 2));
-    console.log(`✅ Repository configuration template created: ${outputPath}`);
   }
 
   /**
