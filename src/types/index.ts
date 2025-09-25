@@ -73,6 +73,18 @@ export interface CloneOptions {
 }
 
 /**
+ * CLI analysis options interface
+ * Defines the structure for command-line analysis options
+ */
+export interface CLIAnalysisOptions {
+  output: string;
+  format: 'json' | 'graphml' | 'dot';
+  branch?: string;
+  depth: string;
+  timeout: string;
+}
+
+/**
  * Repository validation result
  */
 export interface ValidationResult {

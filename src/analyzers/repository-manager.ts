@@ -12,7 +12,6 @@ import {
   RepositoryInfo,
   FileInfo,
   CloneOptions,
-  ProgressInfo,
   AnalysisError,
   ValidationResult
 } from '../types/index.js';
@@ -351,7 +350,7 @@ export class RepositoryManager {
         });
       }
 
-    } catch (error) {
+    } catch {
       errors.push({
         type: 'validation',
         message: 'Invalid URL format'
@@ -413,7 +412,7 @@ export class RepositoryManager {
       try {
         const branchInfo = await git.branch();
         branch = branchInfo.current;
-      } catch (error) {
+      } catch {
         // Branch info might not be available, continue without it
       }
 
@@ -422,7 +421,7 @@ export class RepositoryManager {
       try {
         const log = await git.log({ maxCount: 1 });
         commit = log.latest?.hash;
-      } catch (error) {
+      } catch {
         // Commit info might not be available, continue without it
       }
 

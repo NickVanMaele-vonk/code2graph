@@ -5,7 +5,7 @@
 
 import { Command } from 'commander';
 import { RepositoryManager } from './analyzers/repository-manager.js';
-import { AnalysisConfig, ProgressInfo } from './types/index.js';
+import { ProgressInfo, CLIAnalysisOptions } from './types/index.js';
 
 /**
  * Main CLI class
@@ -41,7 +41,7 @@ class Code2GraphCLI {
       .option('-b, --branch <branch>', 'Git branch to analyze')
       .option('--depth <depth>', 'Git clone depth', '1')
       .option('--timeout <ms>', 'Clone timeout in milliseconds', '300000')
-      .action(async (repoUrl: string, options: any) => {
+      .action(async (repoUrl: string, options: CLIAnalysisOptions) => {
         await this.analyzeRepository(repoUrl, options);
       });
 
@@ -67,9 +67,9 @@ class Code2GraphCLI {
    * Main analysis workflow following Phase 2.1 requirements
    * 
    * @param repoUrl - Repository URL to analyze
-   * @param options - Analysis options
+   * @param options - Analysis options from CLI command
    */
-  private async analyzeRepository(repoUrl: string, options: any): Promise<void> {
+  private async analyzeRepository(repoUrl: string, options: CLIAnalysisOptions): Promise<void> {
     try {
       console.log('🚀 Starting Code2Graph analysis...');
       console.log(`📁 Repository: ${repoUrl}`);
