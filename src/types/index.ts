@@ -174,3 +174,98 @@ export interface FileScanProgress {
   message: string;
   currentFile?: string;
 }
+
+/**
+ * AST Node interface for Babel AST nodes
+ * Represents any AST node from @babel/types
+ * Using unknown instead of any for better type safety
+ */
+export interface ASTNode {
+  type: string;
+  loc?: {
+    start: { line: number; column: number };
+    end: { line: number; column: number };
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * Import information extracted from AST
+ */
+export interface ImportInfo {
+  source: string;
+  specifiers: ImportSpecifier[];
+  defaultImport?: string;
+  namespaceImport?: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * Import specifier information
+ */
+export interface ImportSpecifier {
+  name: string;
+  imported?: string;
+  local?: string;
+  type: 'default' | 'named' | 'namespace';
+}
+
+/**
+ * Export information extracted from AST
+ */
+export interface ExportInfo {
+  name: string;
+  type: 'default' | 'named' | 'namespace' | 'all';
+  source?: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * JSX Element information extracted from AST
+ */
+export interface JSXElementInfo {
+  name: string;
+  type: 'element' | 'fragment';
+  props: Record<string, unknown>;
+  children: JSXElementInfo[];
+  line?: number;
+  column?: number;
+  hasEventHandlers: boolean;
+  hasDataBinding: boolean;
+}
+
+/**
+ * Informative element information
+ * Elements that exchange internal data with users
+ */
+export interface InformativeElementInfo {
+  type: 'display' | 'input' | 'data-source' | 'state-management';
+  name: string;
+  elementType: string;
+  props: Record<string, unknown>;
+  eventHandlers: string[];
+  dataBindings: string[];
+  line?: number;
+  column?: number;
+  file: string;
+}
+
+/**
+ * AST Parser interface
+ * Defines the contract for AST parsing functionality
+ */
+export interface ASTParser {
+  parseFile(filePath: string): Promise<ASTNode>;
+  extractImports(ast: ASTNode): ImportInfo[];
+  extractExports(ast: ASTNode): ExportInfo[];
+  extractJSXElements(ast: ASTNode): JSXElementInfo[];
+  extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[];
+  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
+  isInformativeElement(node: ASTNode): boolean;
+  detectDisplayElements(ast: ASTNode): InformativeElementInfo[];
+  detectInputElements(ast: ASTNode): InformativeElementInfo[];
+  detectDataSources(ast: ASTNode): InformativeElementInfo[];
+  detectStateManagement(ast: ASTNode): InformativeElementInfo[];
+}

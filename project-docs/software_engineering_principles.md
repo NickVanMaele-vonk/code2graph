@@ -14,7 +14,7 @@ You are a world-class software engineer who excels at creating code that is easy
 
 ### Fundamental Guidelines
 
-- **DRY (Don't Repeat Yourself)**: Eliminate code duplication. Never create new duplicate logic. Instead, analyse the code base for existing logic and give preference to refactoring and extending existing code.  
+- **DRY (Don't Repeat Yourself)**: Eliminate code duplication. Never create new duplicate logic. Instead, analyse the code base for existing logic and give preference to refactoring and extending existing code.  Important: if standard software or imported tools already offer standard functionality and interfaces then DO NOT create custom interfaces!
 - **KISS (Keep It Simple)**: Prefer simple solutions; use complexity only when necessary
 - **YAGNI (You Aren't Gonna Need It)**: Focus on current requirements, avoid over-engineering
 - **Fundamental solutions over temporary fixes**: Avoid implementing temporary fixes just to pass a test or to finish the implementation of some feature. Go for fundamental solutions that are logically correct and coherent.

@@ -8,7 +8,8 @@ import { RepositoryManager } from './analyzers/repository-manager.js';
 import { AnalysisLogger } from './analyzers/analysis-logger.js';
 import { MemoryMonitor } from './analyzers/memory-monitor.js';
 import { ConfigurationManager } from './analyzers/configuration-manager.js';
-import { ProgressInfo, CLIAnalysisOptions, FileScanProgress } from './types/index.js';
+import { ASTParserImpl } from './analyzers/ast-parser.js';
+import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo } from './types/index.js';
 
 /**
  * Main CLI class
@@ -19,6 +20,7 @@ class Code2GraphCLI {
   private logger: AnalysisLogger;
   private memoryMonitor: MemoryMonitor;
   private configManager: ConfigurationManager;
+  private astParser: ASTParserImpl;
   private program: Command;
 
   constructor() {
@@ -26,6 +28,7 @@ class Code2GraphCLI {
     this.logger = new AnalysisLogger(''); // Will be initialized with actual repo URL
     this.memoryMonitor = new MemoryMonitor();
     this.configManager = new ConfigurationManager();
+    this.astParser = new ASTParserImpl(); // Will be initialized with logger later
     this.program = new Command();
     this.setupCommands();
   }
@@ -97,8 +100,9 @@ class Code2GraphCLI {
         process.exit(1);
       }
 
-      // Initialize repository manager with dependencies
+      // Initialize repository manager and AST parser with dependencies
       this.repositoryManager.initialize(this.logger, this.memoryMonitor);
+      this.astParser = new ASTParserImpl(this.logger);
 
       // Create progress callback for repository cloning
       const progressCallback = (progress: ProgressInfo) => {
@@ -174,11 +178,15 @@ class Code2GraphCLI {
         warnings: scanResult.warnings.length
       });
 
-      // TODO: Implement dependency analysis (Phase 2.3)
-      console.log('\n⚠️  Dependency analysis not yet implemented (Phase 2.3)');
+      // Phase 3.3: Basic AST Parser - Parse files and extract informative elements
+      console.log('\n🔍 Phase 3.3: Basic AST Parser - Analyzing code structure...');
+      await this.performASTAnalysis(scanResult.files);
       
-      // TODO: Implement output generation (Phase 2.4)
-      console.log('⚠️  Output generation not yet implemented (Phase 2.4)');
+      // TODO: Implement dependency analysis (Phase 2.4)
+      console.log('\n⚠️  Dependency analysis not yet implemented (Phase 2.4)');
+      
+      // TODO: Implement output generation (Phase 2.5)
+      console.log('⚠️  Output generation not yet implemented (Phase 2.5)');
 
       console.log('\n🎉 Analysis completed successfully!');
       console.log(`📄 Results will be saved to: ${options.output}`);
@@ -226,6 +234,102 @@ EXAMPLES:
 
 For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
     `);
+  }
+
+  /**
+   * Performs AST analysis on scanned files
+   * Phase 3.3: Basic AST Parser implementation
+   * 
+   * @param files - Array of files to analyze
+   */
+  private async performASTAnalysis(files: FileInfo[]): Promise<void> {
+    const typescriptFiles = files.filter(file => 
+      file.extension === '.ts' || 
+      file.extension === '.tsx' || 
+      file.extension === '.js' || 
+      file.extension === '.jsx'
+    );
+
+    console.log(`📊 Analyzing ${typescriptFiles.length} TypeScript/JavaScript files...`);
+
+    let totalImports = 0;
+    let totalExports = 0;
+    let totalJSXElements = 0;
+    let totalInformativeElements = 0;
+    let parseErrors = 0;
+
+    for (let i = 0; i < typescriptFiles.length; i++) {
+      const file = typescriptFiles[i];
+      const progress = Math.round(((i + 1) / typescriptFiles.length) * 100);
+      
+      console.log(`⏳ Parsing ${file.name} (${progress}%)`);
+
+      try {
+        // Parse the file
+        const ast = await this.astParser.parseFile(file.path);
+        
+        // Extract various elements
+        const imports = this.astParser.extractImports(ast);
+        const exports = this.astParser.extractExports(ast);
+        const jsxElements = this.astParser.extractJSXElements(ast);
+        const informativeElements = this.astParser.extractInformativeElements(ast, file.path);
+
+        totalImports += imports.length;
+        totalExports += exports.length;
+        totalJSXElements += jsxElements.length;
+        totalInformativeElements += informativeElements.length;
+
+        // Log detailed information for this file
+        await this.logger.logInfo(`AST analysis completed for ${file.name}`, {
+          imports: imports.length,
+          exports: exports.length,
+          jsxElements: jsxElements.length,
+          informativeElements: informativeElements.length,
+          displayElements: informativeElements.filter(el => el.type === 'display').length,
+          inputElements: informativeElements.filter(el => el.type === 'input').length,
+          dataSources: informativeElements.filter(el => el.type === 'data-source').length,
+          stateManagement: informativeElements.filter(el => el.type === 'state-management').length
+        });
+
+      } catch (error) {
+        parseErrors++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️  Failed to parse ${file.name}: ${errorMessage}`);
+        await this.logger.logWarning(`Failed to parse file: ${file.name}`, {
+          error: errorMessage,
+          file: file.path
+        });
+      }
+
+      // Check memory usage
+      if (this.memoryMonitor.checkMemoryWarning()) {
+        console.warn('⚠️  Memory usage warning: Consider reducing analysis scope');
+        await this.logger.logWarning('Memory usage warning during AST analysis', {
+          memoryUsage: this.memoryMonitor.getUsagePercentage()
+        });
+      }
+
+      if (this.memoryMonitor.checkMemoryError()) {
+        throw new Error('Fatal error: memory capacity exceeded during AST analysis');
+      }
+    }
+
+    // Log summary
+    console.log(`✅ AST Analysis completed:`);
+    console.log(`   📥 Total imports: ${totalImports}`);
+    console.log(`   📤 Total exports: ${totalExports}`);
+    console.log(`   🎨 Total JSX elements: ${totalJSXElements}`);
+    console.log(`   💡 Total informative elements: ${totalInformativeElements}`);
+    console.log(`   ❌ Parse errors: ${parseErrors}`);
+
+    await this.logger.logInfo('AST analysis summary', {
+      filesAnalyzed: typescriptFiles.length,
+      totalImports,
+      totalExports,
+      totalJSXElements,
+      totalInformativeElements,
+      parseErrors
+    });
   }
 
   /**
