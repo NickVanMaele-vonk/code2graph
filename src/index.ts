@@ -361,7 +361,10 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
 }
 
 // Main execution
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being executed directly (not imported)
+// This ensures the CLI only runs when the file is executed directly
+const isMainModule = process.argv[1] && process.argv[1].endsWith('index.js');
+if (isMainModule) {
   const cli = new Code2GraphCLI();
   cli.run().catch(error => {
     console.error('❌ Fatal error:', error);

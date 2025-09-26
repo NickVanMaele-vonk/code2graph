@@ -33,6 +33,15 @@ More software languages to follow later.
 ✅ ConfigurationManager with validation and file operations
 ✅ Comprehensive test coverage (70 tests)
 
+**Phase 3.3 - Code parsing - Complete**: Traversing code and identifying elements that become graph nodes
+✅ AST Parser Implementation: Full ASTParserImpl class with all required methods
+✅ Babel Integration: Proper TypeScript/JavaScript/JSX parsing using @babel/parser
+✅ Import/Export Analysis: Comprehensive extraction of module dependencies
+✅ JSX Element Detection: Full JSX component analysis with event handlers and data binding
+✅ Informative Element Identification: Detection of display, input, data source, and state management elements
+✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
+✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
+
 
 ## Installation
 
@@ -57,19 +66,19 @@ npm run build
 ### Analyze a Repository
 
 ```bash
-npm start analyze <repo-url>
+node dist/index.js analyze <repo-url>
 ```
 
 Examples:
 ```bash
 # Analyze a repository with default settings
-npm start analyze https://github.com/user/repo
+node dist/index.js analyze https://github.com/user/repo
 
 # Analyze with custom output format and file
-npm start analyze https://github.com/user/repo -f json -o ./my-analysis.json
+node dist/index.js analyze https://github.com/user/repo -f json -o ./my-analysis.json
 
 # Analyze a specific branch
-npm start analyze https://github.com/user/repo -b develop
+node dist/index.js analyze https://github.com/user/repo -b develop
 ```
 
 ### Command Options
