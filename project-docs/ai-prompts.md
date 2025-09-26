@@ -48,7 +48,7 @@ When creating recommendations or solutions, follow the principles listed in '.\p
 
 I agree with your suggestion. 
 Implement it, following all rules in '.\project-docs\code-change-rules.md'. 
-Don't run terminal commands yourself. Just list them, let me run them, and wait for my feedback. 
+Don't run terminal commands yourself - just list them, let me run them, and wait for my feedback. 
 
 Fix it, following all rules in '.\project-docs\code-change-rules.md'. 
-Don't run terminal commands yourself. Just list them, let me run them, and wait for my feedback. 
+Don't run terminal commands yourself - just list them, let me run them, and wait for my feedback. 
