@@ -42,6 +42,14 @@ More software languages to follow later.
 ✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
 ✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
 
+**Phase 3.4 - Dependency Analyser - Complete**: 
+✅ Core Dependency Analyser Implementation (src/analyzers/dependency-analyser.ts)
+✅ Key Methods Implemented: buildDependencyGraph(), traceAPICalls(), analyzeServiceDependencies(), mapDatabaseOperations(), createEdges(), normalizeAPIEndpoints(), detectCircularDependencies()
+✅ Comprehensive Type Definitions (src/types/index.ts)
+✅ Edge Creation Rules (Following Architecture Document)
+✅ API Endpoint Normalization (Converts specific IDs to parameters, e.g., to ':clubid' or ':userid')
+✅ Comprehensive Unit Tests (test/dependency-analyser.test.js)
+✅ CLI Integration (src/index.ts)
 
 ## Installation
 
@@ -143,8 +151,6 @@ The tool follows a modular architecture with three main layers:
 
 The following phases are planned:
 
-- **Phase 2.3**: Basic AST Parser (TypeScript/JavaScript parsing)
-- **Phase 2.4**: Dependency Analyzer (component relationship analysis)
 - **Phase 3**: React Component Analysis
 - **Phase 4**: Middleware Traversal and Dead Code Detection
 
