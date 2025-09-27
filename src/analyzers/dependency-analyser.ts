@@ -1,0 +1,1083 @@
+/**
+ * Dependency Analyzer
+ * Handles dependency analysis and graph building for React/TypeScript codebases
+ * Following Phase 3.4 requirements from the architecture document
+ */
+
+import {
+  DependencyAnalyzer,
+  DependencyGraph,
+  NodeInfo,
+  EdgeInfo,
+  ComponentInfo,
+  APICallInfo,
+  ServiceInfo,
+  ServiceGraph,
+  DatabaseOperationInfo,
+  CycleInfo,
+  GraphMetadata,
+  NodeType,
+  NodeCategory,
+  DataType,
+  RelationshipType,
+  AnalysisError,
+  InformativeElement,
+  ImportInfo,
+  PatternAnalysisResult,
+  PatternInfo,
+  PatternType
+} from '../types/index.js';
+import { AnalysisLogger } from './analysis-logger.js';
+// Note: path-to-regexp imports removed as we're using custom segment-based parsing
+
+/**
+ * Dependency Analyzer Implementation
+ * Analyzes component dependencies and builds comprehensive dependency graphs
+ * Implements all methods from the DependencyAnalyzer interface
+ */
+export class DependencyAnalyzerImpl implements DependencyAnalyzer {
+  private logger?: AnalysisLogger;
+  private nodeCounter: number = 0;
+  private edgeCounter: number = 0;
+
+  /**
+   * Constructor initializes the dependency analyzer
+   * @param logger - Optional analysis logger for error reporting
+   */
+  constructor(logger?: AnalysisLogger) {
+    this.logger = logger;
+  }
+
+  /**
+   * Builds a comprehensive dependency graph from component information
+   * Creates nodes for all components, functions, APIs, and database entities
+   * 
+   * @param components - Array of component information to analyze
+   * @returns DependencyGraph - Complete dependency graph with nodes and edges
+   */
+  buildDependencyGraph(components: ComponentInfo[]): DependencyGraph {
+    try {
+      if (this.logger) {
+        this.logger.logInfo('Starting dependency graph construction', {
+          componentCount: components.length
+        });
+      }
+
+      // Reset counters for new graph
+      this.nodeCounter = 0;
+      this.edgeCounter = 0;
+
+      // Create nodes from components
+      const nodes = this.createNodesFromComponents(components);
+
+      // Create edges between nodes
+      const edges = this.createEdges(nodes);
+
+      // Create metadata
+      const metadata = this.createGraphMetadata(components, nodes, edges);
+
+      const graph: DependencyGraph = {
+        nodes,
+        edges,
+        metadata
+      };
+
+      if (this.logger) {
+        this.logger.logInfo('Dependency graph construction completed', {
+          totalNodes: nodes.length,
+          totalEdges: edges.length,
+          deadCodeNodes: nodes.filter(n => n.liveCodeScore === 0).length,
+          liveCodeNodes: nodes.filter(n => n.liveCodeScore === 100).length
+        });
+      }
+
+      return graph;
+
+    } catch (error) {
+      const errorMessage = `Failed to build dependency graph: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Traces API calls from components
+   * Identifies all API endpoints called by components
+   * 
+   * @param components - Array of component information to analyze
+   * @returns APICallInfo[] - Array of API call information
+   */
+  traceAPICalls(components: ComponentInfo[]): APICallInfo[] {
+    const apiCalls: APICallInfo[] = [];
+
+    try {
+      for (const component of components) {
+        // Look for API calls in informative elements
+        for (const element of component.informativeElements) {
+          if (element.type === 'data-source') {
+            const apiCall = this.extractAPICallFromElement(element, component.file);
+            if (apiCall) {
+              apiCalls.push(apiCall);
+            }
+          }
+        }
+
+        // Look for API calls in imports (external API libraries)
+        for (const importInfo of component.imports) {
+          if (this.isAPILibrary(importInfo.source)) {
+            const apiCall = this.createAPICallFromImport(importInfo, component.file);
+            if (apiCall) {
+              apiCalls.push(apiCall);
+            }
+          }
+        }
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('API call tracing completed', {
+          totalAPICalls: apiCalls.length,
+          uniqueEndpoints: new Set(apiCalls.map(call => call.endpoint)).size
+        });
+      }
+
+      return apiCalls;
+
+    } catch (error) {
+      const errorMessage = `Failed to trace API calls: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Analyzes service dependencies
+   * Maps service layer dependencies and operations
+   * 
+   * @param services - Array of service information to analyze
+   * @returns ServiceGraph - Service dependency graph
+   */
+  analyzeServiceDependencies(services: ServiceInfo[]): ServiceGraph {
+    const dependencies: Array<{ from: string; to: string; type: string; operations: string[] }> = [];
+
+    try {
+      for (const service of services) {
+        // Analyze service dependencies
+        for (const dependency of service.dependencies) {
+          const serviceDependency = {
+            from: service.name,
+            to: dependency,
+            type: 'service-call',
+            operations: service.operations.map(op => op.name)
+          };
+          dependencies.push(serviceDependency);
+        }
+
+        // Analyze operation dependencies within service
+        for (const operation of service.operations) {
+          for (const dbOp of operation.databaseOperations) {
+            const dbDependency = {
+              from: `${service.name}.${operation.name}`,
+              to: dbOp.table,
+              type: 'database-operation',
+              operations: [dbOp.operation]
+            };
+            dependencies.push(dbDependency);
+          }
+        }
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('Service dependency analysis completed', {
+          totalServices: services.length,
+          totalDependencies: dependencies.length
+        });
+      }
+
+      return {
+        services,
+        dependencies
+      };
+
+    } catch (error) {
+      const errorMessage = `Failed to analyze service dependencies: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Maps database operations from services
+   * Connects service operations to database tables and views
+   * 
+   * @param services - Array of service information to analyze
+   * @returns DatabaseOperationInfo[] - Array of database operation information
+   */
+  mapDatabaseOperations(services: ServiceInfo[]): DatabaseOperationInfo[] {
+    const dbOperations: DatabaseOperationInfo[] = [];
+
+    try {
+      for (const service of services) {
+        for (const operation of service.operations) {
+          for (const dbOp of operation.databaseOperations) {
+            const dbOperationInfo: DatabaseOperationInfo = {
+              operation: dbOp.operation,
+              table: dbOp.table,
+              type: dbOp.type,
+              file: service.file,
+              line: undefined, // Will be filled from AST analysis
+              column: undefined
+            };
+            dbOperations.push(dbOperationInfo);
+          }
+        }
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('Database operation mapping completed', {
+          totalOperations: dbOperations.length,
+          uniqueTables: new Set(dbOperations.map(op => op.table)).size
+        });
+      }
+
+      return dbOperations;
+
+    } catch (error) {
+      const errorMessage = `Failed to map database operations: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Creates edges between nodes based on their relationships
+   * Implements edge creation rules from the architecture document
+   * 
+   * @param nodes - Array of nodes to create edges for
+   * @returns EdgeInfo[] - Array of edge information
+   */
+  createEdges(nodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+
+    try {
+      // Create edges based on node relationships
+      for (const node of nodes) {
+        // Create edges for component imports
+        if (node.nodeType === 'function' && node.nodeCategory === 'front end') {
+          const importEdges = this.createImportEdges(node, nodes);
+          edges.push(...importEdges);
+        }
+
+        // Create edges for API calls
+        if (node.nodeType === 'API') {
+          const apiEdges = this.createAPIEdges(node, nodes);
+          edges.push(...apiEdges);
+        }
+
+        // Create edges for database operations
+        if (node.nodeType === 'table' || node.nodeType === 'view') {
+          const dbEdges = this.createDatabaseEdges();
+          edges.push(...dbEdges);
+        }
+      }
+
+      // Remove duplicate edges
+      const uniqueEdges = this.removeDuplicateEdges(edges);
+
+      if (this.logger) {
+        this.logger.logInfo('Edge creation completed', {
+          totalEdges: uniqueEdges.length,
+          importEdges: uniqueEdges.filter(e => e.relationship === 'imports').length,
+          callEdges: uniqueEdges.filter(e => e.relationship === 'calls').length,
+          dataEdges: uniqueEdges.filter(e => e.relationship === 'reads' || e.relationship === 'writes to').length
+        });
+      }
+
+      return uniqueEdges;
+
+    } catch (error) {
+      const errorMessage = `Failed to create edges: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Normalizes API endpoints by parameterizing specific values
+   * Uses path-to-regexp for robust pattern detection and normalization
+   * 
+   * @param endpoints - Array of API endpoints to normalize
+   * @returns string[] - Array of normalized endpoints
+   */
+  normalizeAPIEndpoints(endpoints: string[]): string[] {
+    try {
+      const normalizedEndpoints = endpoints.map(endpoint => this.normalizeEndpoint(endpoint));
+
+      if (this.logger) {
+        this.logger.logInfo('API endpoint normalization completed', {
+          originalEndpoints: endpoints.length,
+          uniqueNormalized: new Set(normalizedEndpoints).size
+        });
+      }
+
+      return normalizedEndpoints;
+
+    } catch (error) {
+      const errorMessage = `Failed to normalize API endpoints: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Normalizes a single endpoint using path-to-regexp parsing
+   * @param endpoint The endpoint to normalize
+   * @returns Normalized endpoint string
+   */
+  private normalizeEndpoint(endpoint: string): string {
+    try {
+      // Split endpoint into path and query/fragment parts
+      const [pathPart, queryPart, fragmentPart] = this.splitEndpoint(endpoint);
+      
+      // Parse the path part
+      const normalizedPath = this.normalizePath(pathPart);
+      
+      // Reconstruct the endpoint
+      let normalized = normalizedPath;
+      if (queryPart) {
+        normalized += '?:query';
+      }
+      if (fragmentPart) {
+        normalized += '#:fragment';
+      }
+      
+      return normalized;
+    } catch {
+      // If parsing fails, return original endpoint
+      return endpoint;
+    }
+  }
+
+  /**
+   * Splits endpoint into path, query, and fragment parts
+   * @param endpoint The full endpoint string
+   * @returns Array of [path, query, fragment]
+   */
+  private splitEndpoint(endpoint: string): [string, string?, string?] {
+    const fragmentIndex = endpoint.indexOf('#');
+    const queryIndex = endpoint.indexOf('?');
+    
+    let pathPart = endpoint;
+    let queryPart: string | undefined;
+    let fragmentPart: string | undefined;
+    
+    if (fragmentIndex !== -1) {
+      fragmentPart = endpoint.substring(fragmentIndex + 1);
+      pathPart = endpoint.substring(0, fragmentIndex);
+    }
+    
+    if (queryIndex !== -1) {
+      const queryEnd = fragmentIndex !== -1 ? fragmentIndex : endpoint.length;
+      queryPart = endpoint.substring(queryIndex + 1, queryEnd);
+      pathPart = endpoint.substring(0, queryIndex);
+    }
+    
+    return [pathPart, queryPart, fragmentPart];
+  }
+
+  /**
+   * Normalizes the path part of an endpoint
+   * @param path The path to normalize
+   * @returns Normalized path string
+   */
+  private normalizePath(path: string): string {
+    // Split path into segments
+    const segments = path.split('/').filter(segment => segment.length > 0);
+    
+    // Normalize each segment
+    const normalizedSegments = segments.map(segment => this.normalizeSegment(segment));
+    
+    // Reconstruct path
+    return '/' + normalizedSegments.join('/');
+  }
+
+  /**
+   * Normalizes a single path segment using improved pattern matching
+   * Implements fixed regex patterns to resolve test failures and improve accuracy
+   * 
+   * Pattern matching order is critical - static segments must be checked first
+   * to avoid incorrect normalization of common API path segments
+   * 
+   * @param segment The segment to normalize
+   * @returns Normalized segment with appropriate parameter type
+   */
+  private normalizeSegment(segment: string): string {
+    // Check for static API segments first - these should never be normalized
+    if (this.isStaticSegment(segment)) {
+      return segment;
+    }
+    
+    // Check for UUID pattern (most specific - 36 character format with hyphens)
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
+      return ':uuid';
+    }
+    
+    // Check for version pattern (v1, v2.1, etc.) - but only if not in static segments
+    if (/^v\d+(\.\d+)*$/i.test(segment)) {
+      return ':version';
+    }
+    
+    // Check for numeric ID (pure numbers only)
+    if (/^\d+$/.test(segment)) {
+      return ':id';
+    }
+    
+    // Check for camelCase pattern - fixed regex to match User123, Post456, Order789
+    // Pattern: starts with uppercase letter, followed by alphanumeric characters
+    // This catches mixed-case identifiers like User123, Post456, Order789
+    if (/^[A-Z][a-zA-Z0-9]*$/.test(segment)) {
+      return ':camelCase';
+    }
+    
+    // Check for dot-separated ID (file paths, namespaces) - before hyphenated
+    if (/^[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)+$/.test(segment)) {
+      return ':path';
+    }
+    
+    // Check for underscore ID (database keys, snake_case)
+    if (/^[a-zA-Z0-9]+(_[a-zA-Z0-9]+)+$/.test(segment)) {
+      return ':key';
+    }
+    
+    // Check for hyphenated ID (slugs) - but only true slugs, not mixed alphanumeric
+    // Pattern: lowercase letters/numbers separated by hyphens (kebab-case)
+    // This prevents ORD-2024-001 from being classified as a slug
+    if (/^[a-z0-9]+(-[a-z0-9]+)+$/.test(segment)) {
+      return ':slug';
+    }
+    
+    // Check for alphanumeric ID (generic) - but exclude common static segments
+    // This catches ORD-2024-001 and similar mixed alphanumeric patterns
+    if (/^[a-zA-Z0-9-]+$/.test(segment)) {
+      return ':identifier';
+    }
+    
+    // Return original segment if no pattern matches
+    return segment;
+  }
+
+  /**
+   * Checks if a segment is a static API path segment that should not be normalized
+   * @param segment The segment to check
+   * @returns True if the segment is static and should not be normalized
+   */
+  private isStaticSegment(segment: string): boolean {
+    const staticSegments = [
+      'api', 'users', 'user', 'posts', 'post', 'comments', 'comment',
+      'orders', 'order', 'clubs', 'club', 'persons', 'person', 'health', 'status',
+      'auth', 'login', 'logout', 'register', 'profile', 'settings', 'admin',
+      'public', 'private', 'internal', 'external', 'data', 'info', 'details',
+      'list', 'create', 'update', 'delete', 'get', 'post', 'put', 'patch'
+    ];
+    
+    return staticSegments.includes(segment.toLowerCase());
+  }
+
+  /**
+   * Analyzes API patterns and returns comprehensive pattern analysis
+   * @param endpoints Array of API endpoint strings
+   * @returns Pattern analysis result with normalized endpoints
+   */
+  analyzeAPIPatterns(endpoints: string[]): PatternAnalysisResult {
+    try {
+      // For now, use the existing normalization logic
+      const normalizedEndpoints = this.normalizeAPIEndpoints(endpoints);
+      
+      // Create a basic pattern analysis result
+      const patternDistribution: Record<PatternType, number> = {
+        uuid: 0,
+        numeric: 0,
+        alphanumeric: 0,
+        hyphenated: 0,
+        underscore: 0,
+        'dot-separated': 0,
+        'mixed-case': 0,
+        'query-param': 0,
+        fragment: 0,
+        versioned: 0,
+        nested: 0,
+        unknown: 0
+      };
+
+      // Count basic patterns
+      for (const endpoint of endpoints) {
+        if (endpoint.includes('uuid') || /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi.test(endpoint)) {
+          patternDistribution.uuid++;
+        } else if (/\d+/.test(endpoint)) {
+          patternDistribution.numeric++;
+        } else {
+          patternDistribution.unknown++;
+        }
+      }
+
+      const detectedPatterns: PatternInfo[] = [];
+      if (patternDistribution.uuid > 0) {
+        detectedPatterns.push({
+          type: 'uuid',
+          regex: /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+          parameterName: 'uuid',
+          confidence: 0.95,
+          examples: endpoints.filter(e => /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi.test(e)).slice(0, 3),
+          frequency: patternDistribution.uuid
+        });
+      }
+      if (patternDistribution.numeric > 0) {
+        detectedPatterns.push({
+          type: 'numeric',
+          regex: /\/\d+/g,
+          parameterName: 'id',
+          confidence: 0.8,
+          examples: endpoints.filter(e => /\d+/.test(e)).slice(0, 3),
+          frequency: patternDistribution.numeric
+        });
+      }
+
+      const mostCommonPattern = detectedPatterns.length > 0 
+        ? detectedPatterns.reduce((prev, current) => 
+            prev.frequency > current.frequency ? prev : current
+          )
+        : null;
+
+      if (this.logger) {
+        this.logger.logInfo('API pattern analysis completed', {
+          totalEndpoints: endpoints.length,
+          detectedPatterns: detectedPatterns.length,
+          mostCommonPattern: mostCommonPattern?.type,
+          uniqueNormalized: new Set(normalizedEndpoints).size
+        });
+      }
+
+      return {
+        detectedPatterns,
+        mostCommonPattern,
+        patternDistribution,
+        totalEndpoints: endpoints.length,
+        normalizedEndpoints
+      };
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logError('Error analyzing API patterns', { error: (error as Error).message, endpoints });
+      }
+      return {
+        detectedPatterns: [],
+        mostCommonPattern: null,
+        patternDistribution: {} as Record<PatternType, number>,
+        totalEndpoints: endpoints.length,
+        normalizedEndpoints: endpoints
+      };
+    }
+  }
+
+  /**
+   * Detects circular dependencies in the graph
+   * Implements cycle detection with stopping after second traversal
+   * 
+   * @param graph - Dependency graph to analyze for cycles
+   * @returns CycleInfo[] - Array of cycle information
+   */
+  detectCircularDependencies(graph: DependencyGraph): CycleInfo[] {
+    const cycles: CycleInfo[] = [];
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
+
+    try {
+      // Build adjacency list
+      const adjacencyList = this.buildAdjacencyList(graph.edges);
+
+      // Check each node for cycles
+      for (const node of graph.nodes) {
+        if (!visited.has(node.id)) {
+          const nodeCycles = this.detectCyclesFromNode(
+            node.id, 
+            adjacencyList, 
+            visited, 
+            recursionStack, 
+            []
+          );
+          cycles.push(...nodeCycles);
+        }
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('Circular dependency detection completed', {
+          totalCycles: cycles.length,
+          errorCycles: cycles.filter(c => c.severity === 'error').length,
+          warningCycles: cycles.filter(c => c.severity === 'warning').length
+        });
+      }
+
+      return cycles;
+
+    } catch (error) {
+      const errorMessage = `Failed to detect circular dependencies: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  // Private helper methods
+
+  /**
+   * Creates nodes from component information
+   * @param components - Array of component information
+   * @returns NodeInfo[] - Array of created nodes
+   */
+  private createNodesFromComponents(components: ComponentInfo[]): NodeInfo[] {
+    const nodes: NodeInfo[] = [];
+
+    for (const component of components) {
+      // Create main component node
+      const componentNode = this.createComponentNode(component);
+      nodes.push(componentNode);
+
+      // Create nodes for informative elements
+      for (const element of component.informativeElements) {
+        const elementNode = this.createElementNode(element, component.file);
+        nodes.push(elementNode);
+      }
+
+      // Create nodes for imports
+      for (const importInfo of component.imports) {
+        const importNode = this.createImportNode(importInfo, component.file);
+        nodes.push(importNode);
+      }
+    }
+
+    return nodes;
+  }
+
+  /**
+   * Creates a node for a component
+   * @param component - Component information
+   * @returns NodeInfo - Created component node
+   */
+  private createComponentNode(component: ComponentInfo): NodeInfo {
+    return {
+      id: this.generateNodeId(),
+      label: component.name,
+      nodeType: 'function' as NodeType,
+      nodeCategory: 'front end' as NodeCategory,
+      datatype: 'array' as DataType,
+      liveCodeScore: 100, // Will be calculated based on incoming edges
+      file: component.file,
+      properties: {
+        type: component.type,
+        props: component.props,
+        state: component.state,
+        hooks: component.hooks
+      }
+    };
+  }
+
+  /**
+   * Creates a node for an informative element
+   * @param element - Informative element information
+   * @param file - File path
+   * @returns NodeInfo - Created element node
+   */
+  private createElementNode(element: InformativeElement, file: string): NodeInfo {
+    let nodeType: NodeType = 'function';
+    let nodeCategory: NodeCategory = 'front end';
+    let datatype: DataType = 'array';
+
+    // Determine node type based on element type
+    switch (element.type) {
+      case 'data-source':
+        nodeType = 'API';
+        nodeCategory = 'middleware';
+        break;
+      case 'state-management':
+        nodeType = 'function';
+        nodeCategory = 'front end';
+        datatype = 'array';
+        break;
+      case 'display':
+      case 'input':
+        nodeType = 'function';
+        nodeCategory = 'front end';
+        break;
+    }
+
+    return {
+      id: this.generateNodeId(),
+      label: element.name,
+      nodeType,
+      nodeCategory,
+      datatype,
+      liveCodeScore: 100, // Will be calculated based on incoming edges
+      file,
+      properties: {
+        elementType: element.type,
+        props: element.props,
+        eventHandlers: element.eventHandlers.map((h: { name: string }) => h.name),
+        dataBindings: element.dataBindings.map((b: { source: string }) => b.source)
+      }
+    };
+  }
+
+  /**
+   * Creates a node for an import
+   * @param importInfo - Import information
+   * @param file - File path
+   * @returns NodeInfo - Created import node
+   */
+  private createImportNode(importInfo: ImportInfo, file: string): NodeInfo {
+    return {
+      id: this.generateNodeId(),
+      label: importInfo.source,
+      nodeType: 'function' as NodeType,
+      nodeCategory: 'front end' as NodeCategory,
+      datatype: 'array' as DataType,
+      liveCodeScore: 100,
+      file,
+      properties: {
+        importType: 'external',
+        specifiers: importInfo.specifiers.map((s: { name: string; type: string }) => ({ name: s.name, type: s.type }))
+      }
+    };
+  }
+
+  /**
+   * Creates import edges for a node
+   * @param node - Source node
+   * @param allNodes - All available nodes
+   * @returns EdgeInfo[] - Array of import edges
+   */
+  private createImportEdges(node: NodeInfo, allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Find imported components and create edges
+    const imports = (node.properties.specifiers as Array<{ name: string; type: string }>) || [];
+    for (const importSpec of imports) {
+      const targetNode = allNodes.find(n => n.label === importSpec.name);
+      if (targetNode) {
+        edges.push({
+          id: this.generateEdgeId(),
+          source: node.id,
+          target: targetNode.id,
+          relationship: 'imports' as RelationshipType,
+          properties: {
+            importType: importSpec.type
+          }
+        });
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Creates API edges for a node
+   * @param node - Source node
+   * @param allNodes - All available nodes
+   * @returns EdgeInfo[] - Array of API edges
+   */
+  private createAPIEdges(node: NodeInfo, allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Create edges to database tables for API calls
+    const dbNodes = allNodes.filter(n => n.nodeType === 'table' || n.nodeType === 'view');
+    for (const dbNode of dbNodes) {
+      edges.push({
+        id: this.generateEdgeId(),
+        source: node.id,
+        target: dbNode.id,
+        relationship: 'reads' as RelationshipType,
+        properties: {
+          operation: 'SELECT'
+        }
+      });
+    }
+
+    return edges;
+  }
+
+  /**
+   * Creates database edges for a node
+   * @returns EdgeInfo[] - Array of database edges
+   */
+  private createDatabaseEdges(): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Database nodes are typically end nodes, but can have relationships to other tables
+    // This would be implemented based on foreign key relationships in a real system
+    
+    return edges;
+  }
+
+  /**
+   * Removes duplicate edges from the array
+   * @param edges - Array of edges to deduplicate
+   * @returns EdgeInfo[] - Array of unique edges
+   */
+  private removeDuplicateEdges(edges: EdgeInfo[]): EdgeInfo[] {
+    const uniqueEdges = new Map<string, EdgeInfo>();
+    
+    for (const edge of edges) {
+      const key = `${edge.source}-${edge.target}-${edge.relationship}`;
+      if (!uniqueEdges.has(key)) {
+        uniqueEdges.set(key, edge);
+      }
+    }
+    
+    return Array.from(uniqueEdges.values());
+  }
+
+  /**
+   * Creates graph metadata
+   * @param components - Array of components
+   * @param nodes - Array of nodes
+   * @param edges - Array of edges
+   * @returns GraphMetadata - Graph metadata
+   */
+  private createGraphMetadata(components: ComponentInfo[], nodes: NodeInfo[], edges: EdgeInfo[]): GraphMetadata {
+    const deadCodeNodes = nodes.filter(n => n.liveCodeScore === 0).length;
+    const liveCodeNodes = nodes.filter(n => n.liveCodeScore === 100).length;
+
+    return {
+      version: '1.0.0',
+      timestamp: new Date().toISOString(),
+      repositoryUrl: '', // Will be set by caller
+      analysisScope: {
+        includedTypes: ['frontend', 'middleware', 'database'],
+        excludedTypes: ['test', 'node_modules']
+      },
+      statistics: {
+        linesOfCode: 0, // Will be calculated from file analysis
+        totalNodes: nodes.length,
+        totalEdges: edges.length,
+        deadCodeNodes,
+        liveCodeNodes
+      }
+    };
+  }
+
+  /**
+   * Extracts API call information from an informative element
+   * @param element - Informative element
+   * @param file - File path
+   * @returns APICallInfo | null - API call information or null
+   */
+  private extractAPICallFromElement(element: InformativeElement, file: string): APICallInfo | null {
+    if (element.type !== 'data-source') {
+      return null;
+    }
+
+    // Extract endpoint from element properties
+    const endpoint = (element.props?.endpoint as string) || '/api/unknown';
+    const method = (element.props?.method as string) || 'GET';
+
+    return {
+      name: element.name,
+      endpoint,
+      method,
+      file,
+      normalizedEndpoint: this.normalizeAPIEndpoints([endpoint])[0]
+    };
+  }
+
+  /**
+   * Creates API call information from import
+   * @param importInfo - Import information
+   * @param file - File path
+   * @returns APICallInfo | null - API call information or null
+   */
+  private createAPICallFromImport(importInfo: ImportInfo, file: string): APICallInfo | null {
+    if (!this.isAPILibrary(importInfo.source)) {
+      return null;
+    }
+
+    return {
+      name: importInfo.source,
+      endpoint: '/api/external',
+      method: 'GET',
+      file,
+      normalizedEndpoint: '/api/external'
+    };
+  }
+
+  /**
+   * Checks if a source is an API library
+   * @param source - Import source
+   * @returns boolean - True if it's an API library
+   */
+  private isAPILibrary(source: string): boolean {
+    const apiLibraries = ['axios', 'fetch', 'http', 'api', 'request'];
+    return apiLibraries.some(lib => source.includes(lib));
+  }
+
+  /**
+   * Builds adjacency list from edges
+   * @param edges - Array of edges
+   * @returns Map<string, string[]> - Adjacency list
+   */
+  private buildAdjacencyList(edges: EdgeInfo[]): Map<string, string[]> {
+    const adjacencyList = new Map<string, string[]>();
+
+    for (const edge of edges) {
+      if (!adjacencyList.has(edge.source)) {
+        adjacencyList.set(edge.source, []);
+      }
+      adjacencyList.get(edge.source)!.push(edge.target);
+    }
+
+    return adjacencyList;
+  }
+
+  /**
+   * Detects cycles from a specific node
+   * @param nodeId - Node ID to start from
+   * @param adjacencyList - Adjacency list
+   * @param visited - Set of visited nodes
+   * @param recursionStack - Set of nodes in recursion stack
+   * @param path - Current path
+   * @returns CycleInfo[] - Array of detected cycles
+   */
+  private detectCyclesFromNode(
+    nodeId: string,
+    adjacencyList: Map<string, string[]>,
+    visited: Set<string>,
+    recursionStack: Set<string>,
+    path: string[]
+  ): CycleInfo[] {
+    const cycles: CycleInfo[] = [];
+
+    visited.add(nodeId);
+    recursionStack.add(nodeId);
+    path.push(nodeId);
+
+    const neighbors = adjacencyList.get(nodeId) || [];
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        const neighborCycles = this.detectCyclesFromNode(
+          neighbor,
+          adjacencyList,
+          visited,
+          recursionStack,
+          [...path]
+        );
+        cycles.push(...neighborCycles);
+      } else if (recursionStack.has(neighbor)) {
+        // Cycle detected
+        const cycleStart = path.indexOf(neighbor);
+        const cycleNodes = path.slice(cycleStart);
+        cycleNodes.push(neighbor);
+
+        cycles.push({
+          nodes: cycleNodes,
+          type: 'circular-dependency',
+          severity: cycleNodes.length > 3 ? 'error' : 'warning',
+          description: `Circular dependency detected: ${cycleNodes.join(' -> ')}`
+        });
+      }
+    }
+
+    recursionStack.delete(nodeId);
+    return cycles;
+  }
+
+  /**
+   * Generates a unique node ID
+   * @returns string - Unique node ID
+   */
+  private generateNodeId(): string {
+    return `node_${++this.nodeCounter}`;
+  }
+
+  /**
+   * Generates a unique edge ID
+   * @returns string - Unique edge ID
+   */
+  private generateEdgeId(): string {
+    return `edge_${++this.edgeCounter}`;
+  }
+}
+
+// Export the interface and implementation
+export { DependencyAnalyzerImpl as DependencyAnalyzer };

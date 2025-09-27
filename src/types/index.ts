@@ -269,3 +269,342 @@ export interface ASTParser {
   detectDataSources(ast: ASTNode): InformativeElementInfo[];
   detectStateManagement(ast: ASTNode): InformativeElementInfo[];
 }
+
+/**
+ * Graph Types for Dependency Analysis
+ * Following the architecture document specifications
+ */
+
+/**
+ * Data type definitions for nodes
+ */
+export type DataType = "array" | "list" | "integer" | "table" | "view" | string;
+
+/**
+ * Node type definitions
+ */
+export type NodeType = "function" | "API" | "table" | "view" | "route" | string;
+
+/**
+ * Node category definitions
+ */
+export type NodeCategory = "front end" | "middleware" | "database";
+
+/**
+ * Relationship type definitions
+ */
+export type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders";
+
+/**
+ * Node information interface
+ * Represents a node in the dependency graph
+ */
+export interface NodeInfo {
+  id: string;
+  label: string;
+  nodeType: NodeType;
+  nodeCategory: NodeCategory;
+  datatype: DataType;
+  liveCodeScore: number;
+  file: string;
+  line?: number;
+  column?: number;
+  properties: Record<string, unknown>;
+}
+
+/**
+ * Edge information interface
+ * Represents an edge in the dependency graph
+ */
+export interface EdgeInfo {
+  id: string;
+  source: string;
+  target: string;
+  relationship: RelationshipType;
+  properties: Record<string, unknown>;
+}
+
+/**
+ * Dependency graph interface
+ * Complete graph structure with nodes, edges, and metadata
+ */
+export interface DependencyGraph {
+  nodes: NodeInfo[];
+  edges: EdgeInfo[];
+  metadata: GraphMetadata;
+}
+
+/**
+ * Graph metadata interface
+ * Contains information about the analysis and graph generation
+ */
+export interface GraphMetadata {
+  version: string;
+  timestamp: string;
+  repositoryUrl: string;
+  analysisScope: {
+    includedTypes: string[];
+    excludedTypes: string[];
+  };
+  statistics: {
+    linesOfCode: number;
+    totalNodes: number;
+    totalEdges: number;
+    deadCodeNodes: number;
+    liveCodeNodes: number;
+  };
+}
+
+/**
+ * Component information interface
+ * Extended component information for dependency analysis
+ */
+export interface ComponentInfo {
+  name: string;
+  type: ComponentType;
+  file: string;
+  props: PropInfo[];
+  state: StateInfo[];
+  hooks: HookInfo[];
+  children: ComponentInfo[];
+  informativeElements: InformativeElement[];
+  imports: ImportInfo[];
+  exports: ExportInfo[];
+}
+
+/**
+ * Component type definitions
+ */
+export type ComponentType = "functional" | "class" | "hook" | "service" | "api" | "database";
+
+/**
+ * Property information interface
+ */
+export interface PropInfo {
+  name: string;
+  type: string;
+  required: boolean;
+  defaultValue?: unknown;
+}
+
+/**
+ * State information interface
+ */
+export interface StateInfo {
+  name: string;
+  type: string;
+  initialValue?: unknown;
+  setter?: string;
+}
+
+/**
+ * Hook information interface
+ */
+export interface HookInfo {
+  name: string;
+  type: string;
+  dependencies: string[];
+  returnType?: string;
+}
+
+/**
+ * Informative element interface
+ * Elements that exchange internal data with users
+ */
+export interface InformativeElement {
+  type: ElementType;
+  name: string;
+  props: Record<string, unknown>;
+  eventHandlers: EventHandler[];
+  dataBindings: DataBinding[];
+}
+
+/**
+ * Element type definitions
+ */
+export type ElementType = "display" | "input" | "data-source" | "state-management";
+
+/**
+ * Event handler interface
+ */
+export interface EventHandler {
+  name: string;
+  type: string;
+  handler: string;
+}
+
+/**
+ * Data binding interface
+ */
+export interface DataBinding {
+  source: string;
+  target: string;
+  type: string;
+}
+
+/**
+ * API call information interface
+ */
+export interface APICallInfo {
+  name: string;
+  endpoint: string;
+  method: string;
+  file: string;
+  line?: number;
+  column?: number;
+  normalizedEndpoint: string;
+}
+
+/**
+ * Service information interface
+ */
+export interface ServiceInfo {
+  name: string;
+  type: string;
+  file: string;
+  dependencies: string[];
+  operations: ServiceOperation[];
+}
+
+/**
+ * Service operation interface
+ */
+export interface ServiceOperation {
+  name: string;
+  type: string;
+  parameters: string[];
+  returnType?: string;
+  databaseOperations: DatabaseOperation[];
+}
+
+/**
+ * Database operation information interface
+ */
+export interface DatabaseOperationInfo {
+  operation: string;
+  table: string;
+  type: "SELECT" | "INSERT" | "UPDATE" | "DELETE" | "UPSERT";
+  file: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * Database operation interface
+ */
+export interface DatabaseOperation {
+  operation: string;
+  table: string;
+  type: "SELECT" | "INSERT" | "UPDATE" | "DELETE" | "UPSERT";
+  conditions?: string[];
+  fields?: string[];
+}
+
+/**
+ * Service graph interface
+ */
+export interface ServiceGraph {
+  services: ServiceInfo[];
+  dependencies: ServiceDependency[];
+}
+
+/**
+ * Service dependency interface
+ */
+export interface ServiceDependency {
+  from: string;
+  to: string;
+  type: string;
+  operations: string[];
+}
+
+/**
+ * Cycle information interface
+ * For circular dependency detection
+ */
+export interface CycleInfo {
+  nodes: string[];
+  type: string;
+  severity: "warning" | "error";
+  description: string;
+}
+
+/**
+ * API Pattern Detection Types
+ * For robust API endpoint normalization
+ */
+
+/**
+ * Pattern type definitions
+ */
+export type PatternType = "uuid" | "numeric" | "alphanumeric" | "hyphenated" | "underscore" | "dot-separated" | "mixed-case" | "query-param" | "fragment" | "versioned" | "nested" | "unknown";
+
+/**
+ * Pattern information interface
+ */
+export interface PatternInfo {
+  type: PatternType;
+  regex: RegExp;
+  parameterName: string;
+  confidence: number;
+  examples: string[];
+  frequency: number;
+}
+
+/**
+ * Pattern analysis result interface
+ */
+export interface PatternAnalysisResult {
+  detectedPatterns: PatternInfo[];
+  mostCommonPattern: PatternInfo | null;
+  patternDistribution: Record<PatternType, number>;
+  totalEndpoints: number;
+  normalizedEndpoints: string[];
+}
+
+/**
+ * Endpoint segment information
+ */
+export interface EndpointSegment {
+  value: string;
+  isParameter: boolean;
+  parameterType?: PatternType;
+  originalValue: string;
+  position: number;
+}
+
+/**
+ * Endpoint analysis result
+ */
+export interface EndpointAnalysisResult {
+  originalEndpoint: string;
+  normalizedEndpoint: string;
+  segments: EndpointSegment[];
+  detectedPatterns: PatternType[];
+  confidence: number;
+}
+
+/**
+ * Pattern detector interface
+ */
+export interface PatternDetector {
+  detectPatterns(endpoints: string[]): PatternAnalysisResult;
+  analyzeEndpoint(endpoint: string, patterns: PatternInfo[]): EndpointAnalysisResult;
+  normalizeEndpoint(endpoint: string, patterns: PatternInfo[]): string;
+  getPatternConfidence(pattern: PatternInfo, endpoint: string): number;
+}
+
+/**
+ * Dependency Analyzer interface
+ * Defines the contract for dependency analysis functionality
+ */
+export interface DependencyAnalyzer {
+  buildDependencyGraph(components: ComponentInfo[]): DependencyGraph;
+  traceAPICalls(components: ComponentInfo[]): APICallInfo[];
+  analyzeServiceDependencies(services: ServiceInfo[]): ServiceGraph;
+  mapDatabaseOperations(services: ServiceInfo[]): DatabaseOperationInfo[];
+  createEdges(nodes: NodeInfo[]): EdgeInfo[];
+  normalizeAPIEndpoints(endpoints: string[]): string[];
+  detectCircularDependencies(graph: DependencyGraph): CycleInfo[];
+  analyzeAPIPatterns(endpoints: string[]): PatternAnalysisResult;
+}

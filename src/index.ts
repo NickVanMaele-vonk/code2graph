@@ -9,7 +9,8 @@ import { AnalysisLogger } from './analyzers/analysis-logger.js';
 import { MemoryMonitor } from './analyzers/memory-monitor.js';
 import { ConfigurationManager } from './analyzers/configuration-manager.js';
 import { ASTParserImpl } from './analyzers/ast-parser.js';
-import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo } from './types/index.js';
+import { DependencyAnalyzerImpl } from './analyzers/dependency-analyser.js';
+import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo } from './types/index.js';
 
 /**
  * Main CLI class
@@ -21,6 +22,7 @@ class Code2GraphCLI {
   private memoryMonitor: MemoryMonitor;
   private configManager: ConfigurationManager;
   private astParser: ASTParserImpl;
+  private dependencyAnalyzer: DependencyAnalyzerImpl;
   private program: Command;
 
   constructor() {
@@ -29,6 +31,7 @@ class Code2GraphCLI {
     this.memoryMonitor = new MemoryMonitor();
     this.configManager = new ConfigurationManager();
     this.astParser = new ASTParserImpl(); // Will be initialized with logger later
+    this.dependencyAnalyzer = new DependencyAnalyzerImpl(); // Will be initialized with logger later
     this.program = new Command();
     this.setupCommands();
   }
@@ -100,9 +103,10 @@ class Code2GraphCLI {
         process.exit(1);
       }
 
-      // Initialize repository manager and AST parser with dependencies
+      // Initialize repository manager, AST parser, and dependency analyzer with dependencies
       this.repositoryManager.initialize(this.logger, this.memoryMonitor);
       this.astParser = new ASTParserImpl(this.logger);
+      this.dependencyAnalyzer = new DependencyAnalyzerImpl(this.logger);
 
       // Create progress callback for repository cloning
       const progressCallback = (progress: ProgressInfo) => {
@@ -180,10 +184,11 @@ class Code2GraphCLI {
 
       // Phase 3.3: Basic AST Parser - Parse files and extract informative elements
       console.log('\n🔍 Phase 3.3: Basic AST Parser - Analyzing code structure...');
-      await this.performASTAnalysis(scanResult.files);
+      const components = await this.performASTAnalysis(scanResult.files);
       
-      // TODO: Implement dependency analysis (Phase 2.4)
-      console.log('\n⚠️  Dependency analysis not yet implemented (Phase 2.4)');
+      // Phase 3.4: Dependency Analyzer - Build dependency graph
+      console.log('\n🔗 Phase 3.4: Dependency Analyzer - Building dependency graph...');
+      await this.performDependencyAnalysis(components);
       
       // TODO: Implement output generation (Phase 2.5)
       console.log('⚠️  Output generation not yet implemented (Phase 2.5)');
@@ -241,8 +246,9 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
    * Phase 3.3: Basic AST Parser implementation
    * 
    * @param files - Array of files to analyze
+   * @returns Promise<ComponentInfo[]> - Array of component information
    */
-  private async performASTAnalysis(files: FileInfo[]): Promise<void> {
+  private async performASTAnalysis(files: FileInfo[]): Promise<ComponentInfo[]> {
     const typescriptFiles = files.filter(file => 
       file.extension === '.ts' || 
       file.extension === '.tsx' || 
@@ -257,6 +263,7 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
     let totalJSXElements = 0;
     let totalInformativeElements = 0;
     let parseErrors = 0;
+    const components: ComponentInfo[] = [];
 
     for (let i = 0; i < typescriptFiles.length; i++) {
       const file = typescriptFiles[i];
@@ -278,6 +285,35 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
         totalExports += exports.length;
         totalJSXElements += jsxElements.length;
         totalInformativeElements += informativeElements.length;
+
+        // Create component information for dependency analysis
+        const componentInfo: ComponentInfo = {
+          name: file.name.replace(/\.(tsx?|jsx?)$/, ''),
+          type: 'functional',
+          file: file.path,
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: informativeElements.map(el => ({
+            type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
+            name: el.name,
+            props: el.props,
+            eventHandlers: el.eventHandlers.map(handler => ({
+              name: handler,
+              type: 'click',
+              handler: handler
+            })),
+            dataBindings: el.dataBindings.map(binding => ({
+              source: binding,
+              target: 'element',
+              type: 'data'
+            }))
+          })),
+          imports,
+          exports
+        };
+        components.push(componentInfo);
 
         // Log detailed information for this file
         await this.logger.logInfo(`AST analysis completed for ${file.name}`, {
@@ -328,8 +364,66 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
       totalExports,
       totalJSXElements,
       totalInformativeElements,
-      parseErrors
+      parseErrors,
+      componentsCreated: components.length
     });
+
+    return components;
+  }
+
+  /**
+   * Performs dependency analysis on components
+   * Phase 3.4: Dependency Analyzer implementation
+   * 
+   * @param components - Array of component information to analyze
+   */
+  private async performDependencyAnalysis(components: ComponentInfo[]): Promise<void> {
+    try {
+      console.log(`📊 Analyzing dependencies for ${components.length} components...`);
+
+      // Build dependency graph
+      const dependencyGraph = this.dependencyAnalyzer.buildDependencyGraph(components);
+      
+      console.log(`✅ Dependency graph created:`);
+      console.log(`   📊 Total nodes: ${dependencyGraph.nodes.length}`);
+      console.log(`   🔗 Total edges: ${dependencyGraph.edges.length}`);
+      console.log(`   💀 Dead code nodes: ${dependencyGraph.metadata.statistics.deadCodeNodes}`);
+      console.log(`   ✅ Live code nodes: ${dependencyGraph.metadata.statistics.liveCodeNodes}`);
+
+      // Trace API calls
+      const apiCalls = this.dependencyAnalyzer.traceAPICalls(components);
+      console.log(`   🌐 API calls found: ${apiCalls.length}`);
+
+      // Detect circular dependencies
+      const cycles = this.dependencyAnalyzer.detectCircularDependencies(dependencyGraph);
+      if (cycles.length > 0) {
+        console.log(`   ⚠️  Circular dependencies detected: ${cycles.length}`);
+        cycles.forEach(cycle => {
+          console.log(`      - ${cycle.description}`);
+        });
+      } else {
+        console.log(`   ✅ No circular dependencies detected`);
+      }
+
+      // Log analysis results
+      await this.logger.logInfo('Dependency analysis completed', {
+        totalNodes: dependencyGraph.nodes.length,
+        totalEdges: dependencyGraph.edges.length,
+        deadCodeNodes: dependencyGraph.metadata.statistics.deadCodeNodes,
+        liveCodeNodes: dependencyGraph.metadata.statistics.liveCodeNodes,
+        apiCalls: apiCalls.length,
+        circularDependencies: cycles.length
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Dependency analysis failed: ${errorMessage}`);
+      await this.logger.logError('Dependency analysis failed', {
+        error: errorMessage,
+        components: components.length
+      });
+      throw error;
+    }
   }
 
   /**
