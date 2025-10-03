@@ -420,4 +420,89 @@ describe('AST Parser', () => {
       }
     });
   });
+
+  describe('extractComponentDefinitions', () => {
+    it('should extract functional component from arrow function', async () => {
+      const testFile = path.join(tempDir, 'arrow-component.tsx');
+      const content = `
+        import React from 'react';
+        export const MyComponent = () => {
+          return <div>Hello</div>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 1);
+      assert.strictEqual(components[0].name, 'MyComponent');
+      assert.strictEqual(components[0].type, 'functional');
+      assert.strictEqual(components[0].isExported, true);
+      assert.ok(components[0].line);
+      assert.ok(components[0].column !== undefined);
+    });
+
+    it('should extract class component', async () => {
+      const testFile = path.join(tempDir, 'class-component.tsx');
+      const content = `
+        import React from 'react';
+        export class MainComponent extends React.Component {
+          render() {
+            return <div>Hello</div>;
+          }
+        }
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 1);
+      assert.strictEqual(components[0].name, 'MainComponent');
+      assert.strictEqual(components[0].type, 'class');
+      assert.strictEqual(components[0].isExported, true);
+      assert.strictEqual(components[0].extendsComponent, 'React.Component');
+    });
+
+    it('should extract multiple components from single file', async () => {
+      const testFile = path.join(tempDir, 'multi-component.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const FirstComponent = () => {
+          return <div>First</div>;
+        };
+        
+        export class SecondComponent extends React.Component {
+          render() {
+            return <div>Second</div>;
+          }
+        }
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 2);
+      assert.ok(components.find(c => c.name === 'FirstComponent'));
+      assert.ok(components.find(c => c.name === 'SecondComponent'));
+    });
+
+    it('should not extract non-component functions', async () => {
+      const testFile = path.join(tempDir, 'utility.ts');
+      const content = `
+        export const myHelper = () => {
+          return 'hello';
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 0);
+    });
+  });
 });

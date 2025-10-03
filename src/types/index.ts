@@ -262,6 +262,7 @@ export interface ASTParser {
   extractExports(ast: ASTNode): ExportInfo[];
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[];
+  extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[];
   findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
   isInformativeElement(node: ASTNode): boolean;
   detectDisplayElements(ast: ASTNode): InformativeElementInfo[];
@@ -356,6 +357,21 @@ export interface GraphMetadata {
 }
 
 /**
+ * Component definition information extracted from AST
+ * Phase 1: Represents individual component definitions found in files
+ * Used by AST parser to identify functional and class components
+ */
+export interface ComponentDefinitionInfo {
+  name: string;
+  type: ComponentType;
+  file: string;
+  line?: number;
+  column?: number;
+  isExported: boolean;
+  extendsComponent?: string; // For class components: "React.Component", "Component", etc.
+}
+
+/**
  * Component information interface
  * Extended component information for dependency analysis
  */
@@ -363,6 +379,8 @@ export interface ComponentInfo {
   name: string;
   type: ComponentType;
   file: string;
+  line?: number;
+  column?: number;
   props: PropInfo[];
   state: StateInfo[];
   hooks: HookInfo[];

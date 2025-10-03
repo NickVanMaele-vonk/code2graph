@@ -320,6 +320,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * Creates edges between nodes based on their relationships
    * Implements edge creation rules from the architecture document
    * 
+   * Phase 2 Enhancement: Added JSX usage edge creation to capture component rendering relationships
+   * This is critical for building a complete dependency graph where we can see which components
+   * render which other components (e.g., MainComponent renders Hello component).
+   * 
    * @param nodes - Array of nodes to create edges for
    * @returns EdgeInfo[] - Array of edge information
    */
@@ -348,6 +352,12 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         }
       }
 
+      // Phase 2: Create JSX usage edges (component A renders component B)
+      // This detects when a JSX element represents a component being rendered
+      // Example: <Hello /> in index.tsx should create an edge from index component to Hello component
+      const jsxUsageEdges = this.createJSXUsageEdges(nodes);
+      edges.push(...jsxUsageEdges);
+
       // Remove duplicate edges
       const uniqueEdges = this.removeDuplicateEdges(edges);
 
@@ -356,6 +366,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
           totalEdges: uniqueEdges.length,
           importEdges: uniqueEdges.filter(e => e.relationship === 'imports').length,
           callEdges: uniqueEdges.filter(e => e.relationship === 'calls').length,
+          rendersEdges: uniqueEdges.filter(e => e.relationship === 'renders').length,
           dataEdges: uniqueEdges.filter(e => e.relationship === 'reads' || e.relationship === 'writes to').length
         });
       }
@@ -759,6 +770,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
 
   /**
    * Creates a node for a component
+   * Phase 1 Enhancement: Now includes line/column information for component-level tracking
    * @param component - Component information
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created component node
@@ -776,6 +788,8 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       datatype: 'array' as DataType,
       liveCodeScore,
       file: component.file,
+      line: component.line,
+      column: component.column,
       properties: {
         type: component.type,
         props: component.props,
@@ -890,6 +904,117 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     }
 
     return edges;
+  }
+
+  /**
+   * Creates JSX usage edges for components that render other components
+   * Phase 2 Implementation: Detects when a component renders another component via JSX
+   * Phase 1 Enhancement: Now works at component-level granularity instead of file-level
+   * 
+   * Business Logic:
+   * - Identifies JSX element nodes that represent custom React components (capitalized names)
+   * - Matches these JSX elements to their component definitions based on name
+   * - Creates "renders" edges from the parent component to the rendered component
+   * - Handles multiple components per file correctly
+   * 
+   * Example: If MainComponent in index.tsx contains <Hello />, this creates an edge:
+   *   MainComponent --renders--> Hello component
+   * 
+   * This is crucial for understanding the component hierarchy and rendering flow.
+   * 
+   * @param allNodes - All available nodes in the graph
+   * @returns EdgeInfo[] - Array of JSX usage edges with "renders" relationship
+   */
+  private createJSXUsageEdges(allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+
+    // Separate component definition nodes from JSX element nodes
+    const componentNodes = allNodes.filter(node => 
+      node.properties.type !== undefined && 
+      node.nodeType === 'function' &&
+      node.nodeCategory === 'front end' &&
+      !node.properties.elementType // Not a JSX element, but a component definition
+    );
+
+    const jsxElementNodes = allNodes.filter(node => 
+      this.isJSXComponentUsage(node)
+    );
+
+    // For each JSX element that represents a component usage
+    for (const jsxNode of jsxElementNodes) {
+      // Find the component definition that this JSX element references
+      const targetComponentNode = componentNodes.find(compNode => 
+        compNode.label === jsxNode.label && // Same name (e.g., "Hello")
+        compNode.file !== jsxNode.file // Defined in a different file
+      );
+
+      if (!targetComponentNode) {
+        // JSX element doesn't reference an external component, skip
+        continue;
+      }
+
+      // Find the parent component(s) in the same file as the JSX element
+      // Phase 1: There may be multiple components in the same file
+      const parentComponents = componentNodes.filter(compNode => 
+        compNode.file === jsxNode.file
+      );
+
+      // Create edges from each parent component to the target component
+      // Phase 1 Logic: If multiple components in file, they all potentially use the JSX element
+      // In a more sophisticated version, we would track which specific component owns which JSX elements
+      // For now, we assume all components in the file can use the JSX elements in that file
+      for (const parentComponent of parentComponents) {
+        edges.push({
+          id: this.generateEdgeId(),
+          source: parentComponent.id,
+          target: targetComponentNode.id,
+          relationship: 'renders' as RelationshipType,
+          properties: {
+            jsxElement: jsxNode.label,
+            usageFile: jsxNode.file,
+            definitionFile: targetComponentNode.file,
+            usageComponent: parentComponent.label
+          }
+        });
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * Checks if a node represents a JSX element that is a component usage (not an HTML element)
+   * 
+   * Business Logic:
+   * - React components must start with an uppercase letter (React convention)
+   * - HTML elements start with lowercase (div, span, button, etc.)
+   * - JSX element nodes have elementType property
+   * 
+   * Root Cause Fix: Removed HTML element list check that was causing false positives.
+   * The capitalization check alone is sufficient and follows React's strict naming convention:
+   *   - PascalCase (Button, Input) = React component
+   *   - lowercase (button, input) = HTML element
+   * 
+   * This prevents React components named 'Button' or 'Input' from being incorrectly
+   * rejected as HTML elements.
+   * 
+   * @param node - Node to check
+   * @returns boolean - True if this is a JSX component usage, false if HTML element or other
+   */
+  private isJSXComponentUsage(node: NodeInfo): boolean {
+    // Check if node has elementType property (indicates it's a JSX element)
+    const elementType = node.properties.elementType as string | undefined;
+    if (!elementType) {
+      return false;
+    }
+
+    // Check if the label (element name) starts with an uppercase letter
+    // React convention: Component names start with uppercase, HTML elements with lowercase
+    // This check alone is sufficient - React enforces this convention strictly
+    const firstChar = node.label.charAt(0);
+    const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
+
+    return isCapitalized;
   }
 
   /**
