@@ -10,7 +10,8 @@ import { MemoryMonitor } from './analyzers/memory-monitor.js';
 import { ConfigurationManager } from './analyzers/configuration-manager.js';
 import { ASTParserImpl } from './analyzers/ast-parser.js';
 import { DependencyAnalyzerImpl } from './analyzers/dependency-analyser.js';
-import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo } from './types/index.js';
+import { JSONGeneratorImpl } from './generators/json-generator.js';
+import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo, DependencyGraph } from './types/index.js';
 
 /**
  * Main CLI class
@@ -23,6 +24,7 @@ class Code2GraphCLI {
   private configManager: ConfigurationManager;
   private astParser: ASTParserImpl;
   private dependencyAnalyzer: DependencyAnalyzerImpl;
+  private jsonGenerator: JSONGeneratorImpl;
   private program: Command;
 
   constructor() {
@@ -32,6 +34,7 @@ class Code2GraphCLI {
     this.configManager = new ConfigurationManager();
     this.astParser = new ASTParserImpl(); // Will be initialized with logger later
     this.dependencyAnalyzer = new DependencyAnalyzerImpl(); // Will be initialized with logger later
+    this.jsonGenerator = new JSONGeneratorImpl(); // Will be initialized with logger later
     this.program = new Command();
     this.setupCommands();
   }
@@ -103,10 +106,11 @@ class Code2GraphCLI {
         process.exit(1);
       }
 
-      // Initialize repository manager, AST parser, and dependency analyzer with dependencies
+      // Initialize repository manager, AST parser, dependency analyzer, and JSON generator with dependencies
       this.repositoryManager.initialize(this.logger, this.memoryMonitor);
       this.astParser = new ASTParserImpl(this.logger);
       this.dependencyAnalyzer = new DependencyAnalyzerImpl(this.logger);
+      this.jsonGenerator = new JSONGeneratorImpl(this.logger);
 
       // Create progress callback for repository cloning
       const progressCallback = (progress: ProgressInfo) => {
@@ -188,13 +192,14 @@ class Code2GraphCLI {
       
       // Phase 3.4: Dependency Analyzer - Build dependency graph
       console.log('\n🔗 Phase 3.4: Dependency Analyzer - Building dependency graph...');
-      await this.performDependencyAnalysis(components);
+      const dependencyGraph = await this.performDependencyAnalysis(components);
       
-      // TODO: Implement output generation (Phase 2.5)
-      console.log('⚠️  Output generation not yet implemented (Phase 2.5)');
+      // Phase 5.1: JSON Output Generator - Generate and export JSON output
+      console.log('\n📊 Phase 5.1: JSON Output Generator - Generating output...');
+      await this.performOutputGeneration(dependencyGraph, options.output, options.format, repoUrl);
 
       console.log('\n🎉 Analysis completed successfully!');
-      console.log(`📄 Results will be saved to: ${options.output}`);
+      console.log(`📄 Results saved to: ${options.output}`);
       console.log(`📋 Analysis log: ${this.logger.getLogPath()}`);
 
     } catch (error) {
@@ -376,8 +381,9 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
    * Phase 3.4: Dependency Analyzer implementation
    * 
    * @param components - Array of component information to analyze
+   * @returns Promise<DependencyGraph> - Complete dependency graph
    */
-  private async performDependencyAnalysis(components: ComponentInfo[]): Promise<void> {
+  private async performDependencyAnalysis(components: ComponentInfo[]): Promise<DependencyGraph> {
     try {
       console.log(`📊 Analyzing dependencies for ${components.length} components...`);
 
@@ -415,6 +421,8 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
         circularDependencies: cycles.length
       });
 
+      return dependencyGraph;
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error(`❌ Dependency analysis failed: ${errorMessage}`);
@@ -424,6 +432,148 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
       });
       throw error;
     }
+  }
+
+  /**
+   * Performs output generation from dependency graph
+   * Phase 5.1: JSON Output Generator implementation
+   * 
+   * @param dependencyGraph - Complete dependency graph to export
+   * @param outputPath - Path where the output file should be saved
+   * @param format - Output format (json, graphml, dot)
+   * @param repositoryUrl - Repository URL for metadata
+   */
+  private async performOutputGeneration(
+    dependencyGraph: DependencyGraph,
+    outputPath: string,
+    format: string,
+    repositoryUrl: string
+  ): Promise<void> {
+    try {
+      console.log(`📝 Generating ${format.toUpperCase()} output...`);
+
+      // Currently only JSON format is supported (Phase 5.1)
+      if (format !== 'json') {
+        console.warn(`⚠️  Format '${format}' not yet supported. Falling back to JSON.`);
+        await this.logger.logWarning(`Unsupported output format: ${format}. Using JSON.`, {
+          requestedFormat: format,
+          usedFormat: 'json'
+        });
+      }
+
+      // Generate JSON output
+      const jsonOutput = this.jsonGenerator.generateGraph(dependencyGraph);
+      
+      console.log(`✅ JSON output generated:`);
+      console.log(`   📊 Total nodes: ${jsonOutput.statistics.totalNodes}`);
+      console.log(`   🔗 Total edges: ${jsonOutput.statistics.totalEdges}`);
+      console.log(`   💀 Dead code: ${jsonOutput.statistics.deadCodeNodes} (${jsonOutput.statistics.deadCodePercentage}%)`);
+      console.log(`   ✅ Live code: ${jsonOutput.statistics.liveCodeNodes}`);
+
+      // Validate output
+      const validation = this.jsonGenerator.validateOutput(jsonOutput);
+      if (!validation.isValid) {
+        console.error(`❌ Output validation failed:`);
+        validation.errors.forEach(error => {
+          console.error(`   - ${error.message}`);
+        });
+        throw new Error('Output validation failed');
+      }
+
+      if (validation.warnings.length > 0) {
+        console.warn(`⚠️  Output validation warnings:`);
+        validation.warnings.forEach(warning => {
+          console.warn(`   - ${warning.message}`);
+        });
+      }
+
+      // Export to file
+      await this.jsonGenerator.exportToFile(jsonOutput, outputPath);
+
+      // Generate dead code report if dead code exists
+      const deadCodeItems = dependencyGraph.nodes
+        .filter(node => node.liveCodeScore === 0)
+        .map(node => ({
+          id: node.id,
+          name: node.label,
+          type: this.mapNodeTypeToDeadCodeType(node.nodeType),
+          file: node.file,
+          line: node.line,
+          column: node.column,
+          reason: 'no_incoming_edges' as const,
+          confidence: 95,
+          suggestions: [`Remove unused ${node.nodeType}: ${node.label}`],
+          impact: this.calculateImpact(node)
+        }));
+
+      if (deadCodeItems.length > 0) {
+        const deadCodeReportPath = outputPath.replace(/\.json$/, '-dead-code-report.json');
+        const deadCodeReport = this.jsonGenerator.generateDeadCodeReport(deadCodeItems, repositoryUrl);
+        await this.jsonGenerator.exportToFile(deadCodeReport, deadCodeReportPath);
+        
+        console.log(`\n📄 Dead code report generated:`);
+        console.log(`   💀 Total dead code items: ${deadCodeReport.summary.totalDeadCodeItems}`);
+        console.log(`   🔴 High impact: ${deadCodeReport.summary.impactDistribution.high}`);
+        console.log(`   🟡 Medium impact: ${deadCodeReport.summary.impactDistribution.medium}`);
+        console.log(`   🟢 Low impact: ${deadCodeReport.summary.impactDistribution.low}`);
+        console.log(`   📁 Report saved to: ${deadCodeReportPath}`);
+      }
+
+      // Log output generation completion
+      await this.logger.logInfo('Output generation completed', {
+        outputPath,
+        format,
+        nodeCount: jsonOutput.statistics.totalNodes,
+        edgeCount: jsonOutput.statistics.totalEdges,
+        deadCodeCount: jsonOutput.statistics.deadCodeNodes
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Output generation failed: ${errorMessage}`);
+      await this.logger.logError('Output generation failed', {
+        error: errorMessage,
+        outputPath,
+        format
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Maps node type to dead code type
+   * Helper method for dead code report generation
+   * 
+   * @param nodeType - Node type from graph
+   * @returns Dead code type
+   */
+  private mapNodeTypeToDeadCodeType(nodeType: string): 'component' | 'function' | 'variable' | 'api' | 'database' {
+    const lowerType = nodeType.toLowerCase();
+    if (lowerType === 'api' || lowerType === 'route') return 'api';
+    if (lowerType === 'table' || lowerType === 'view') return 'database';
+    if (lowerType === 'function') return 'function';
+    return 'component'; // Default to component
+  }
+
+  /**
+   * Calculates impact level for dead code
+   * Helper method for dead code report generation
+   * 
+   * @param node - Node information
+   * @returns Impact level
+   */
+  private calculateImpact(node: { nodeType: string; nodeCategory: string }): 'low' | 'medium' | 'high' {
+    // Database entities have high impact
+    if (node.nodeType === 'table' || node.nodeType === 'view') return 'high';
+    
+    // APIs have high impact
+    if (node.nodeType === 'API' || node.nodeType === 'route') return 'high';
+    
+    // Middleware has medium impact
+    if (node.nodeCategory === 'middleware') return 'medium';
+    
+    // Frontend has low impact
+    return 'low';
   }
 
   /**
