@@ -22,7 +22,7 @@ describe('AST Parser', () => {
     await fs.ensureDir(tempDir);
     
     // Initialize logger and parser
-    logger = new AnalysisLogger('test-repo');
+    logger = new AnalysisLogger('testrepo');
     parser = new ASTParserImpl(logger);
   });
 

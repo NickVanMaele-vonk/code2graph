@@ -17,7 +17,7 @@ describe('Usage Tracker', () => {
   beforeEach(() => {
     // Create temporary directory for test logs
     tempDir = fs.mkdtempSync('usage-tracker-test-');
-    logger = new AnalysisLogger('test-repo');
+    logger = new AnalysisLogger('testrepo');
     usageTracker = new UsageTrackerImpl(logger);
   });
 

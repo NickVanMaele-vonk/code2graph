@@ -47,8 +47,9 @@ When creating recommendations or solutions, follow the principles listed in '.\p
 ## Code changes
 
 I agree with your suggestion. 
-Implement it, following all rules in '.\project-docs\code-change-rules.md'. 
+Implement it. Follow all rules in '.\project-docs\code-change-rules.md'. 
 Don't run terminal commands yourself - just list them, let me run them, and wait for my feedback. 
 
-Fix it, following all rules in '.\project-docs\code-change-rules.md'. 
+Fix the root cause. Don`t create short-term workarounds just to pass the test. 
+Follow all rules in '.\project-docs\code-change-rules.md'. 
 Don't run terminal commands yourself - just list them, let me run them, and wait for my feedback. 

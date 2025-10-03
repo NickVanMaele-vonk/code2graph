@@ -65,7 +65,7 @@ Details on DependencyAnalyzer
 ✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
 ✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
 
-**Phase 4 - Middleware traversal - Complete**: Usage tracking and dead code detection
+**Phase 4 - Middleware traversal - Ongoing**: Usage tracking and dead code detection
 4.1 Usage Tracking - COMPLETE
 4.2 Alive/Dead Code Analysis - COMPLETE
 4.3 API and Backend Analysis - PARTIALLY STARTED
