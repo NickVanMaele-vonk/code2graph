@@ -363,6 +363,224 @@ describe('Dependency Analyzer', () => {
       assert.ok(edges);
       assert.strictEqual(edges.length, 0);
     });
+
+    // Phase 2 tests: JSX usage edge creation
+    it('should create JSX usage edges when a component renders another component', () => {
+      const nodes = [
+        // Hello component definition in Hello.tsx
+        {
+          id: 'node1',
+          label: 'Hello',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Hello.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // index component definition in index.tsx
+        {
+          id: 'node2',
+          label: 'index',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/index.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Hello JSX element usage in index.tsx
+        {
+          id: 'node3',
+          label: 'Hello',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/index.tsx',
+          properties: {
+            elementType: 'display',
+            props: { compiler: 'expression', framework: 'React' }
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      // Should have at least one "renders" edge
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.ok(rendersEdges.length > 0, 'Should create at least one renders edge');
+      
+      // The edge should be from index component to Hello component
+      const indexToHelloEdge = rendersEdges.find(e => 
+        e.source === 'node2' && e.target === 'node1'
+      );
+      assert.ok(indexToHelloEdge, 'Should create edge from index to Hello component');
+      assert.strictEqual(indexToHelloEdge.relationship, 'renders');
+    });
+
+    it('should not create JSX usage edges for HTML elements', () => {
+      const nodes = [
+        // Component definition
+        {
+          id: 'node1',
+          label: 'MyComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // HTML button element (lowercase, should be ignored)
+        {
+          id: 'node2',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            elementType: 'input',
+            props: { onClick: 'expression' }
+          }
+        },
+        // HTML div element (lowercase, should be ignored)
+        {
+          id: 'node3',
+          label: 'div',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            elementType: 'display',
+            props: {}
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      // Should not create any "renders" edges for HTML elements
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.strictEqual(rendersEdges.length, 0, 'Should not create renders edges for HTML elements');
+    });
+
+    it('should create multiple JSX usage edges when multiple components are used', () => {
+      const nodes = [
+        // Button component
+        {
+          id: 'node1',
+          label: 'Button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Button.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Input component
+        {
+          id: 'node2',
+          label: 'Input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Input.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Form component that uses both Button and Input
+        {
+          id: 'node3',
+          label: 'Form',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Button usage in Form
+        {
+          id: 'node4',
+          label: 'Button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            elementType: 'display',
+            props: { text: 'Submit' }
+          }
+        },
+        // Input usage in Form
+        {
+          id: 'node5',
+          label: 'Input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            elementType: 'input',
+            props: { type: 'text' }
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.strictEqual(rendersEdges.length, 2, 'Should create two renders edges');
+      
+      // Form should render Button
+      const formToButton = rendersEdges.find(e => 
+        e.source === 'node3' && e.target === 'node1'
+      );
+      assert.ok(formToButton, 'Form should render Button');
+      
+      // Form should render Input
+      const formToInput = rendersEdges.find(e => 
+        e.source === 'node3' && e.target === 'node2'
+      );
+      assert.ok(formToInput, 'Form should render Input');
+    });
   });
 
   describe('normalizeAPIEndpoints', () => {

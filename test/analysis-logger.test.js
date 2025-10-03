@@ -5,6 +5,7 @@
 
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
+import * as path from 'node:path';
 import * as fs from 'fs-extra';
 import * as fsBuiltin from 'node:fs/promises';
 import { AnalysisLogger } from '../dist/analyzers/analysis-logger.js';
@@ -13,9 +14,15 @@ describe('AnalysisLogger', () => {
   let logger;
   let testRepoUrl;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     testRepoUrl = 'https://github.com/testuser/testrepo';
     logger = new AnalysisLogger(testRepoUrl);
+    
+    // Root cause fix: Ensure log directory exists before each test
+    // This prevents race conditions where afterEach cleanup from previous test
+    // might still be running when this test starts
+    const logDir = path.dirname(logger.getLogPath());
+    await fs.ensureDir(logDir);
   });
 
   afterEach(async () => {
