@@ -16,31 +16,102 @@ More software languages to follow later.
 
 ## Current Status
 
-**Phase 2.1 - Implementation - Complete**: Repository Cloning System
+**Phase 1 - Foundation set-up - Complete**: Repository Cloning System
+1.1 Project Structure Setup - COMPLETE
+1.2 Core Type Definitions - COMPLETE
+1.3 Basic CLI Framework - COMPLETE
 
 ✅ GitHub repository cloning with progress reporting
 ✅ Local directory analysis support  
 ✅ Proper cleanup and error handling
 ✅ File system scanning for TypeScript/JavaScript files
 ✅ Secure, sandboxed repository operations
-✅ Command-line interface with analyze command
+✅ Command-line interface with analyze, help, version command
 
-**Phase 2.2 - File System Scanner - Complete**: Enhanced file filtering and validation
+**Phase 2 - Repository Analysis - Complete**: Enhanced file filtering and validation
+2.1 Repository Cloning System - COMPLETE
+2.2 File System Scanner - COMPLETE
+2.3 Basic AST Parser - COMPLETE
+2.4 DependencyAnalyzer - COMPLETE
 
-✅ FileSystemScanner with recursive scanning and filtering
-✅ AnalysisLogger with proper logging and test isolation
-✅ MemoryMonitor with memory tracking and warnings
-✅ ConfigurationManager with validation and file operations
+✅ repository-manager
+✅ file-system-scanner with recursive scanning and filtering
+✅ analysis-logger with proper logging and test isolation
+✅ memory-monitor with memory tracking and warnings
+✅ configuration-manager with validation and file operations
+✅ dependency-analyzer with graph building - see details below
 ✅ Comprehensive test coverage (70 tests)
 
-**Phase 3.3 - Code parsing - Complete**: Traversing code and identifying elements that become graph nodes
-✅ AST Parser Implementation: Full ASTParserImpl class with all required methods
+Details on DependencyAnalyzer
+✅ Core Dependency Analyser Implementation (src/analyzers/dependency-analyser.ts). Key Methods Implemented: buildDependencyGraph(), traceAPICalls(), analyzeServiceDependencies(), mapDatabaseOperations(), createEdges(), normalizeAPIEndpoints(), detectCircularDependencies()
+✅ Comprehensive Type Definitions (src/types/index.ts)
+✅ Edge Creation Rules (Following Architecture Document)
+✅ API Endpoint Normalization (Converts specific IDs to parameters, e.g., to ':clubid' or ':userid')
+✅ Comprehensive Unit Tests (test/dependency-analyser.test.js)
+✅ CLI Integration (src/index.ts)
+
+
+
+**Phase 3 - React Component Analysis - Complete**: Traversing code and creating graph nodes
+3.1 Component Detection - COMPLETE (integrated into AST Parser)
+3.2 JSX Element Analysis - COMPLETE (integrated into AST Parser)
+3.3 Import/Export Analysis - COMPLETE (integrated into AST Parser)
+
+✅ ast-parser: Full ASTParserImpl class with all required methods
 ✅ Babel Integration: Proper TypeScript/JavaScript/JSX parsing using @babel/parser
 ✅ Import/Export Analysis: Comprehensive extraction of module dependencies
 ✅ JSX Element Detection: Full JSX component analysis with event handlers and data binding
 ✅ Informative Element Identification: Detection of display, input, data source, and state management elements
 ✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
 ✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
+
+**Phase 4 - Middleware traversal - Complete**: Usage tracking and dead code detection
+4.1 Usage Tracking - COMPLETE
+4.2 Alive/Dead Code Analysis - COMPLETE
+4.3 API and Backend Analysis - PARTIALLY STARTED
+
+✅ API endpoint analysis: traceAPICalls()
+✅ Service dependency analysis: analyzeServiceDependencies()
+✅ Database operation mapping: mapDatabaseOperations()
+✅ API endpoint normalization: normalizeAPIEndpoints()
+✅ Usage tracking for components, functions, and variables
+✅ Live code score calculation (0-100)
+✅ Dead code detection and identification
+✅ Performance warnings for large codebases
+✅ usage-tracker: Full UsageTrackerImpl class with comprehensive usage tracking
+✅ Component Usage Tracking: Track component usage across files with import/export analysis
+✅ Function Usage Tracking: Track function calls and references with cross-file analysis
+✅ Variable Usage Tracking: Track variable usage and assignments with scope analysis
+✅ Live Code Score Calculation: Implement liveCodeScore (0-100) based on usage patterns
+✅ Dead Code Detection: Identify unused components, functions, and variables
+✅ Usage Statistics: Comprehensive statistics for codebase analysis
+✅ Performance Warnings: Automatic warnings for large codebases and high dead code percentages
+✅ Integration with Dependency Analyzer: Seamless integration with existing graph building
+✅ Comprehensive Testing: 100% test coverage with edge cases and error handling
+
+
+## Next steps
+
+In the project plan, the following steps need to be implemented. 
+
+Phase 4: Middleware traversal (Week 4) — mostly complete
+- 4.3 API and Backend Analysis - PARTIALLY STARTED
+    - TO DO: 
+        - Used/unused API endpoint identification
+        - Frontend-to-backend connection mapping
+        - Backend dead code detection and labelling
+        - Analysis of database views and tables
+        - API & Backend progress indicator
+
+Phase 5: Output Generation (Week 5) — not started
+
+Phase 6: Testing and Validation (Week 6) — partial 
+(unit tests exist; 1 failing test; no integration tests)
+
+Phase 7: Polish and Documentation (Week 7) — not started
+
+Phase 8: Release and Future Planning (Week 8) — not started
+
 
 
 ## Installation
@@ -138,15 +209,6 @@ The tool follows a modular architecture with three main layers:
 - **Command Structure**: Uses Commander.js for robust CLI handling
 - **Help System**: Built-in help and documentation
 - **Error Handling**: User-friendly error messages and graceful failure handling
-
-## Next Steps
-
-The following phases are planned:
-
-- **Phase 2.3**: Basic AST Parser (TypeScript/JavaScript parsing)
-- **Phase 2.4**: Dependency Analyzer (component relationship analysis)
-- **Phase 3**: React Component Analysis
-- **Phase 4**: Middleware Traversal and Dead Code Detection
 
 ## Contributing
 
