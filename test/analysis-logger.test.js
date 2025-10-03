@@ -190,6 +190,8 @@ describe('AnalysisLogger', () => {
       await logger.logMemoryUsage(memoryInfo);
       
       const logPath = logger.getLogPath();
+      assert(await fs.pathExists(logPath));
+      
       const logContent = await fsBuiltin.readFile(logPath, 'utf-8');
       assert(logContent.includes('Memory usage'));
       assert(logContent.includes('1024000'));

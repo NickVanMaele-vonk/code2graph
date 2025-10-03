@@ -25,9 +25,14 @@ import {
   ImportInfo,
   PatternAnalysisResult,
   PatternInfo,
-  PatternType
+  PatternType,
+  UsageInfo,
+  UsageStatistics,
+  DeadCodeInfo,
+  PerformanceWarning
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
+import { UsageTrackerImpl } from './usage-tracker.js';
 // Note: path-to-regexp imports removed as we're using custom segment-based parsing
 
 /**
@@ -39,6 +44,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   private logger?: AnalysisLogger;
   private nodeCounter: number = 0;
   private edgeCounter: number = 0;
+  private usageTracker: UsageTrackerImpl;
 
   /**
    * Constructor initializes the dependency analyzer
@@ -46,6 +52,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    */
   constructor(logger?: AnalysisLogger) {
     this.logger = logger;
+    this.usageTracker = new UsageTrackerImpl(logger);
   }
 
   /**
@@ -67,8 +74,12 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       this.nodeCounter = 0;
       this.edgeCounter = 0;
 
+      // Track component usage for live code score calculation
+      const usageInfos = this.usageTracker.trackComponentUsage(components);
+      const liveCodeScores = this.usageTracker.calculateLiveCodeScores(usageInfos);
+
       // Create nodes from components
-      const nodes = this.createNodesFromComponents(components);
+      const nodes = this.createNodesFromComponents(components, liveCodeScores);
 
       // Create edges between nodes
       const edges = this.createEdges(nodes);
@@ -706,25 +717,26 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   /**
    * Creates nodes from component information
    * @param components - Array of component information
+   * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo[] - Array of created nodes
    */
-  private createNodesFromComponents(components: ComponentInfo[]): NodeInfo[] {
+  private createNodesFromComponents(components: ComponentInfo[], liveCodeScores: Map<string, number>): NodeInfo[] {
     const nodes: NodeInfo[] = [];
 
     for (const component of components) {
-      // Create main component node
-      const componentNode = this.createComponentNode(component);
+      // Create main component node with live code score
+      const componentNode = this.createComponentNode(component, liveCodeScores);
       nodes.push(componentNode);
 
       // Create nodes for informative elements
       for (const element of component.informativeElements) {
-        const elementNode = this.createElementNode(element, component.file);
+        const elementNode = this.createElementNode(element, component.file, liveCodeScores);
         nodes.push(elementNode);
       }
 
       // Create nodes for imports
       for (const importInfo of component.imports) {
-        const importNode = this.createImportNode(importInfo, component.file);
+        const importNode = this.createImportNode(importInfo, component.file, liveCodeScores);
         nodes.push(importNode);
       }
     }
@@ -735,16 +747,21 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   /**
    * Creates a node for a component
    * @param component - Component information
+   * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created component node
    */
-  private createComponentNode(component: ComponentInfo): NodeInfo {
+  private createComponentNode(component: ComponentInfo, liveCodeScores: Map<string, number>): NodeInfo {
+    // Find the usage info for this component to get the live code score
+    const componentId = `component_${component.name}`;
+    const liveCodeScore = liveCodeScores.get(componentId) ?? 100;
+
     return {
       id: this.generateNodeId(),
       label: component.name,
       nodeType: 'function' as NodeType,
       nodeCategory: 'front end' as NodeCategory,
       datatype: 'array' as DataType,
-      liveCodeScore: 100, // Will be calculated based on incoming edges
+      liveCodeScore,
       file: component.file,
       properties: {
         type: component.type,
@@ -759,9 +776,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * Creates a node for an informative element
    * @param element - Informative element information
    * @param file - File path
+   * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created element node
    */
-  private createElementNode(element: InformativeElement, file: string): NodeInfo {
+  private createElementNode(element: InformativeElement, file: string, liveCodeScores: Map<string, number>): NodeInfo {
     let nodeType: NodeType = 'function';
     let nodeCategory: NodeCategory = 'front end';
     let datatype: DataType = 'array';
@@ -784,13 +802,17 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         break;
     }
 
+    // Find the usage info for this element to get the live code score
+    const elementId = `element_${element.name}`;
+    const liveCodeScore = liveCodeScores.get(elementId) ?? 100;
+
     return {
       id: this.generateNodeId(),
       label: element.name,
       nodeType,
       nodeCategory,
       datatype,
-      liveCodeScore: 100, // Will be calculated based on incoming edges
+      liveCodeScore,
       file,
       properties: {
         elementType: element.type,
@@ -805,16 +827,21 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * Creates a node for an import
    * @param importInfo - Import information
    * @param file - File path
+   * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created import node
    */
-  private createImportNode(importInfo: ImportInfo, file: string): NodeInfo {
+  private createImportNode(importInfo: ImportInfo, file: string, liveCodeScores: Map<string, number>): NodeInfo {
+    // Find the usage info for this import to get the live code score
+    const importId = `import_${importInfo.source}`;
+    const liveCodeScore = liveCodeScores.get(importId) ?? 100;
+
     return {
       id: this.generateNodeId(),
       label: importInfo.source,
       nodeType: 'function' as NodeType,
       nodeCategory: 'front end' as NodeCategory,
       datatype: 'array' as DataType,
-      liveCodeScore: 100,
+      liveCodeScore,
       file,
       properties: {
         importType: 'external',
@@ -1076,6 +1103,50 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    */
   private generateEdgeId(): string {
     return `edge_${++this.edgeCounter}`;
+  }
+
+  /**
+   * Tracks component usage and calculates live code scores
+   * Phase 4.1: Usage Tracking implementation
+   * 
+   * @param components - Array of component information to analyze
+   * @returns UsageInfo[] - Array of component usage information
+   */
+  trackComponentUsage(components: ComponentInfo[]): UsageInfo[] {
+    return this.usageTracker.trackComponentUsage(components);
+  }
+
+  /**
+   * Calculates usage statistics for the codebase
+   * Phase 4.1: Usage Tracking implementation
+   * 
+   * @param usageInfos - Array of usage information to analyze
+   * @returns UsageStatistics - Comprehensive usage statistics
+   */
+  calculateUsageStatistics(usageInfos: UsageInfo[]): UsageStatistics {
+    return this.usageTracker.calculateUsageStatistics(usageInfos);
+  }
+
+  /**
+   * Detects dead code based on usage tracking
+   * Phase 4.1: Usage Tracking implementation
+   * 
+   * @param usageInfos - Array of usage information to analyze
+   * @returns DeadCodeInfo[] - Array of dead code information
+   */
+  detectDeadCode(usageInfos: UsageInfo[]): DeadCodeInfo[] {
+    return this.usageTracker.detectDeadCode(usageInfos);
+  }
+
+  /**
+   * Generates performance warnings for large codebases
+   * Phase 4.1: Usage Tracking implementation
+   * 
+   * @param statistics - Usage statistics to analyze
+   * @returns PerformanceWarning[] - Array of performance warnings
+   */
+  generatePerformanceWarnings(statistics: UsageStatistics): PerformanceWarning[] {
+    return this.usageTracker.generatePerformanceWarnings(statistics);
   }
 }
 

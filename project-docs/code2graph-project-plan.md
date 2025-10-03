@@ -2,31 +2,31 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
+- **Version**: 1.1
+- **Date**: 2025-10-03
 - **Author**: Nick Van Maele
 - **Project**: code2graph
 - **Timeline**: 6-8 weeks for MVP
 
 ---
 
-## 1. Project Overview
+## 0. Project Overview
 
-### 1.1 Project Goals
+### 0.1 Project Goals
 - Create a command-line tool for analyzing React/TypeScript codebases
 - Generate comprehensive dependency graphs from frontend to database
 - Identify dead code with high accuracy
 - Provide multiple output formats for visualization
 - Build a foundation for future open-source development
 
-### 1.2 Success Criteria
+### 0.2 Success Criteria
 - Successfully analyzes React projects with 100+ components
 - Identifies dead code with >90% accuracy
 - Typical expected runtime of an analysis to be determined after first tests
 - Generates valid JSON output with complete dependency graph
 - Handles malformed code without crashing
 
-### 1.3 Project Constraints
+### 0.3 Project Constraints
 - **Timeline**: 8 weeks for MVP
 - **Resources**: Single developer
 - **Scope**: React/TypeScript focus initially
@@ -34,9 +34,9 @@
 
 ---
 
-## 2. Phase 1: Foundation Setup (Week 1)
+## 1. Phase 1: Foundation Setup (Week 1)
 
-### 2.1 Project Structure Setup
+### 1.1 Project Structure Setup
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -62,7 +62,7 @@
 - All linting passes
 - Project follows TypeScript best practices
 
-### 2.2 Core Type Definitions
+### 1.2 Core Type Definitions
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -86,7 +86,7 @@
 - Type validation works correctly
 - No TypeScript compilation errors
 
-### 2.3 Basic CLI Framework
+### 1.3 Basic CLI Framework
 **Duration**: 1 day
 **Priority**: High
 
@@ -110,9 +110,9 @@
 
 ---
 
-## 3. Phase 2: Repository Analysis (Week 2)
+## 2. Phase 2: Repository Analysis (Week 2)
 
-### 3.1 Repository Cloning System
+### 2.1 Repository Cloning System
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -136,7 +136,7 @@
 - Handles network errors gracefully
 - Shows progress during cloning
 
-### 3.2 File System Scanner
+### 2.2 File System Scanner
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -167,7 +167,7 @@
 - Extracts file metadata
 - Shows scanning progress
 
-### 3.3 Basic AST Parser
+### 2.3 Basic AST Parser
 **Duration**: 1 day
 **Priority**: High
 
@@ -189,7 +189,7 @@
 - Provides useful AST utilities
 - Shows parsing progress
 
-### 3.4 DependencyAnalyser
+### 2.4 DependencyAnalyser
 **Duration**: 1 day
 **Priority**: High
 
@@ -215,9 +215,9 @@
 
 ---
 
-## 4. Phase 3: React Component Analysis (Week 3)
+## 3. Phase 3: React Component Analysis (Week 3)
 
-### 4.1 Component Detection
+### 3.1 Component Detection
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -241,7 +241,7 @@
 - Classifies components by type
 - Handles edge cases (anonymous components, etc.)
 
-### 4.2 JSX Element Analysis
+### 3.2 JSX Element Analysis
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -271,7 +271,7 @@
 - Maps element relationships
 - Handles complex JSX patterns
 
-### 4.3 Import/Export Analysis
+### 3.3 Import/Export Analysis
 **Duration**: 1 day
 **Priority**: High
 
@@ -297,9 +297,9 @@
 
 ---
 
-## 5. Phase 4: Middleware traversal (Week 4)
+## 4. Phase 4: Middleware traversal (Week 4)
 
-### 5.1 Usage Tracking
+### 4.1 Usage Tracking
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -323,7 +323,7 @@
 - Tracks function usage properly
 - Provides usage statistics
 
-### 5.2 Alive/Dead Code Analysis
+### 4.2 Alive/Dead Code Analysis
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -343,7 +343,7 @@
 - Adds comments in code to mark code as dead 
 - Filters false positives effectively
 
-### 5.3 API and Backend Analysis
+### 4.3 API and Backend Analysis
 **Duration**: 1 day
 **Priority**: Medium
 
@@ -369,9 +369,9 @@
 
 ---
 
-## 6. Phase 5: Output Generation (Week 5)
+## 5. Phase 5: Output Generation (Week 5)
 
-### 6.1 JSON Output Generator
+### 5.1 JSON Output Generator
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -395,9 +395,9 @@
 
 ---
 
-## 7. Phase 6: Testing and Validation (Week 6)
+## 6. Phase 6: Testing and Validation (Week 6)
 
-### 7.1 Unit Testing
+### 6.1 Unit Testing
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -420,7 +420,7 @@
 - Tests cover edge cases
 - Tests are maintainable
 
-### 7.2 Integration Testing
+### 6.2 Integration Testing
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -443,7 +443,7 @@
 - Handles various project structures
 - Meets performance requirements
 
-### 7.3 Validation with Target Project
+### 6.3 Validation with Target Project
 **Duration**: 1 day
 **Priority**: Critical
 
@@ -467,9 +467,9 @@
 
 ---
 
-## 8. Phase 7: Polish and Documentation (Week 7)
+## 7. Phase 7: Polish and Documentation (Week 7)
 
-### 8.1 CLI Polish
+### 7.1 CLI Polish
 **Duration**: 1 day
 **Priority**: High
 
@@ -492,7 +492,7 @@
 - Progress indicators work
 - Help documentation is complete
 
-### 8.2 Documentation
+### 7.2 Documentation
 **Duration**: 2 days
 **Priority**: High
 
@@ -515,7 +515,7 @@
 - API is well documented
 - Contribution guidelines are clear
 
-### 8.3 Final Testing
+### 7.3 Final Testing
 **Duration**: 2 days
 **Priority**: Critical
 
@@ -540,9 +540,9 @@
 
 ---
 
-## 9. Phase 8: Release and Future Planning (Week 8)
+## 8. Phase 8: Release and Future Planning (Week 8)
 
-### 9.1 Release Preparation
+### 8.1 Release Preparation
 **Duration**: 1 day
 **Priority**: High
 
@@ -562,8 +562,8 @@
 - Documentation is updated
 - Release is announced
 
-### 9.2 Future Planning
-#### 9.2.0 Detail plans for future work
+### 8.2 Future Planning
+#### 8.2.0 Detail plans for future work
 **Duration**: 1 day
 **Priority**: Medium
 
@@ -586,7 +586,7 @@
 - Lessons learned are documented
 - Improvement backlog is created
 
-#### 9.2.1 GraphML Output Generator
+#### 8.2.1 GraphML Output Generator
 **Duration**: 1 day
 **Priority**: Medium
 
@@ -608,7 +608,7 @@
 - Validates GraphML format
 - Works with GraphML tools
 
-#### 9.2.2 DOT Output Generator
+#### 8.2.2 DOT Output Generator
 **Duration**: 1 day
 **Priority**: Medium
 
@@ -630,7 +630,7 @@
 - Validates DOT format
 - Works with Graphviz
 
-#### 9.2.3 Report Generation
+#### 8.2.3 Report Generation
 **Duration**: 1 day
 **Priority**: High
 
@@ -652,7 +652,7 @@
 - Provides analysis statistics
 - Offers actionable recommendations
 
-#### 9.2.4 Graceful interruption
+#### 8.2.4 Graceful interruption
 **Duration**: 3 days
 **Priority**: Medium
 
@@ -670,7 +670,7 @@
 - Interrupt gracefully so that restart is possible
 
 
-#### 9.2.5 File streaming
+#### 8.2.5 File streaming
 **Duration**: 5 days
 **Priority**: Medium
 
@@ -686,7 +686,7 @@
 - Large file chunked and processed successfully 
 
 
-#### 9.2.6 Parallel processing of files
+#### 8.2.6 Parallel processing of files
 **Duration**: 5 days
 **Priority**: Medium
 
@@ -703,7 +703,7 @@
 
 
 
-#### 9.2.7 AST caching 
+#### 8.2.7 AST caching 
 **Duration**: 5 days
 **Priority**: Medium
 
@@ -719,7 +719,7 @@
 - ASTs of files can be re-used several times without rerunning AST 
 
 
-#### 9.2.8 Accessibility 
+#### 8.2.8 Accessibility 
 **Duration**: 5 days
 **Priority**: Medium
 
@@ -727,7 +727,7 @@
 - [ ] Include ARIA roles and attributes (role="progressbar", aria-valuenow, etc.) for screen readers.
 
 
-##### Deliverables:
+##### Deliverables: 
 - Implement screenreader compatibility 
 
 ##### Acceptance Criteria:
@@ -738,9 +738,9 @@
 
 ---
 
-## 10. Risk Management
+## 9. Risk Management
 
-### 10.1 Technical Risks
+### 9.1 Technical Risks
 
 #### Risk: AST Parsing Complexity
 - **Probability**: Medium
@@ -757,7 +757,7 @@
 - **Impact**: High
 - **Mitigation**: Extensive testing, confidence scoring, user feedback
 
-### 10.2 Project Risks
+### 9.2 Project Risks
 
 #### Risk: Scope Creep
 - **Probability**: Medium
@@ -776,40 +776,40 @@
 
 ---
 
-## 11. Success Metrics
+## 10. Success Metrics
 
-### 11.1 Technical Metrics
+### 10.1 Technical Metrics
 - **Analysis Accuracy**: >95% correct component relationship detection
 - **Dead Code Detection**: >90% accuracy in identifying unused code
 - **Performance**: Expectation to be set after first tests. Preliminary hope: process 10k payload lines in under 1 minute
 - **Reliability**: <1% crash rate on real-world codebases
 
-### 11.2 Project Metrics
+### 10.2 Project Metrics
 - **Timeline**: Complete MVP within 8 weeks
 - **Quality**: >90% test coverage
 - **Documentation**: Complete user and API documentation
 - **Usability**: Users can run basic analysis without documentation
 
-### 11.3 User Experience Metrics
+### 10.3 User Experience Metrics
 - **Setup Time**: <5 minutes from installation to first analysis
 - **Learning Curve**: Basic usage without documentation
 - **Output Quality**: Generated graphs are immediately useful
 
 ---
 
-## 12. Resource Requirements
+## 11. Resource Requirements
 
-### 12.1 Development Resources
+### 11.1 Development Resources
 - **Developer**: 1 full-time developer
 - **Timeline**: 8 weeks
 - **Tools**: Development environment, testing tools, documentation tools
 
-### 12.2 Testing Resources
+### 11.2 Testing Resources
 - **Test Projects**: Real React projects for testing
 - **Test Data**: Various code patterns and edge cases
 - **Performance Testing**: Large repositories for benchmarking
 
-### 12.3 Documentation Resources
+### 11.3 Documentation Resources
 - **Documentation Tools**: Markdown, JSDoc, README
 - **Examples**: Sample projects and outputs
 - **Tutorials**: Step-by-step usage guides

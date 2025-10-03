@@ -417,6 +417,8 @@ export interface InformativeElement {
   props: Record<string, unknown>;
   eventHandlers: EventHandler[];
   dataBindings: DataBinding[];
+  line?: number;
+  column?: number;
 }
 
 /**
@@ -595,6 +597,143 @@ export interface PatternDetector {
 }
 
 /**
+ * Usage tracking information interface
+ * Tracks how components, functions, and variables are used
+ */
+export interface UsageInfo {
+  id: string;
+  name: string;
+  type: 'component' | 'function' | 'variable' | 'api' | 'database';
+  file: string;
+  line?: number;
+  column?: number;
+  definitionLocation: {
+    file: string;
+    line?: number;
+    column?: number;
+  };
+  usageLocations: UsageLocation[];
+  isUsed: boolean;
+  usageCount: number;
+  liveCodeScore: number;
+}
+
+/**
+ * Usage location information
+ * Where a component/function/variable is used
+ */
+export interface UsageLocation {
+  file: string;
+  line?: number;
+  column?: number;
+  usageType: 'import' | 'call' | 'reference' | 'assignment';
+  context?: string;
+}
+
+/**
+ * Usage statistics interface
+ * Provides comprehensive usage statistics for the codebase
+ */
+export interface UsageStatistics {
+  totalComponents: number;
+  usedComponents: number;
+  unusedComponents: number;
+  totalFunctions: number;
+  usedFunctions: number;
+  unusedFunctions: number;
+  totalVariables: number;
+  usedVariables: number;
+  unusedVariables: number;
+  totalAPIs: number;
+  usedAPIs: number;
+  unusedAPIs: number;
+  totalDatabaseEntities: number;
+  usedDatabaseEntities: number;
+  unusedDatabaseEntities: number;
+  deadCodePercentage: number;
+  liveCodePercentage: number;
+}
+
+/**
+ * Performance warning interface
+ * Warnings for large codebases that might impact performance
+ */
+export interface PerformanceWarning {
+  type: 'large_codebase' | 'memory_usage' | 'analysis_time';
+  severity: 'warning' | 'error';
+  message: string;
+  recommendation?: string;
+  threshold: number;
+  actualValue: number;
+}
+
+/**
+ * Usage Tracker interface
+ * Defines the contract for usage tracking functionality
+ */
+export interface UsageTracker {
+  trackComponentUsage(components: ComponentInfo[]): UsageInfo[];
+  trackFunctionUsage(functions: FunctionInfo[]): UsageInfo[];
+  trackVariableUsage(variables: VariableInfo[]): UsageInfo[];
+  calculateUsageStatistics(usageInfos: UsageInfo[]): UsageStatistics;
+  calculateLiveCodeScores(usageInfos: UsageInfo[]): Map<string, number>;
+  detectDeadCode(usageInfos: UsageInfo[]): DeadCodeInfo[];
+  generatePerformanceWarnings(statistics: UsageStatistics): PerformanceWarning[];
+}
+
+/**
+ * Function information interface
+ * Extended function information for usage tracking
+ */
+export interface FunctionInfo {
+  name: string;
+  type: 'function' | 'arrow-function' | 'method' | 'async-function';
+  file: string;
+  line?: number;
+  column?: number;
+  parameters: string[];
+  returnType?: string;
+  isExported: boolean;
+  isImported: boolean;
+  calls: string[];
+  calledBy: string[];
+}
+
+/**
+ * Variable information interface
+ * Extended variable information for usage tracking
+ */
+export interface VariableInfo {
+  name: string;
+  type: 'const' | 'let' | 'var';
+  file: string;
+  line?: number;
+  column?: number;
+  value?: unknown;
+  isExported: boolean;
+  isImported: boolean;
+  isUsed: boolean;
+  usedIn: string[];
+}
+
+/**
+ * Dead code information interface
+ * Information about dead code detected in the analysis
+ */
+export interface DeadCodeInfo {
+  id: string;
+  name: string;
+  type: 'component' | 'function' | 'variable' | 'api' | 'database';
+  file: string;
+  line?: number;
+  column?: number;
+  reason: 'unused' | 'unreachable' | 'no_incoming_edges';
+  confidence: number;
+  suggestions: string[];
+  impact: 'low' | 'medium' | 'high';
+}
+
+/**
  * Dependency Analyzer interface
  * Defines the contract for dependency analysis functionality
  */
@@ -607,4 +746,9 @@ export interface DependencyAnalyzer {
   normalizeAPIEndpoints(endpoints: string[]): string[];
   detectCircularDependencies(graph: DependencyGraph): CycleInfo[];
   analyzeAPIPatterns(endpoints: string[]): PatternAnalysisResult;
+  // Phase 4.1: Usage Tracking methods
+  trackComponentUsage(components: ComponentInfo[]): UsageInfo[];
+  calculateUsageStatistics(usageInfos: UsageInfo[]): UsageStatistics;
+  detectDeadCode(usageInfos: UsageInfo[]): DeadCodeInfo[];
+  generatePerformanceWarnings(statistics: UsageStatistics): PerformanceWarning[];
 }
