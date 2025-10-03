@@ -29,10 +29,15 @@ import {
   UsageInfo,
   UsageStatistics,
   DeadCodeInfo,
-  PerformanceWarning
+  PerformanceWarning,
+  FileInfo
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
 import { UsageTrackerImpl } from './usage-tracker.js';
+import { APIEndpointAnalyzerImpl, BackendRouteAnalysis } from './api-endpoint-analyzer.js';
+import { DatabaseAnalyzerImpl, DatabaseAnalysis } from './database-analyzer.js';
+import { ConnectionMapperImpl } from './connection-mapper.js';
+import { APIBackendProgressIndicatorImpl } from './api-backend-progress-indicator.js';
 // Note: path-to-regexp imports removed as we're using custom segment-based parsing
 
 /**
@@ -45,6 +50,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   private nodeCounter: number = 0;
   private edgeCounter: number = 0;
   private usageTracker: UsageTrackerImpl;
+  private apiEndpointAnalyzer: APIEndpointAnalyzerImpl;
+  private databaseAnalyzer: DatabaseAnalyzerImpl;
+  private connectionMapper: ConnectionMapperImpl;
+  private progressIndicator: APIBackendProgressIndicatorImpl;
 
   /**
    * Constructor initializes the dependency analyzer
@@ -53,6 +62,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   constructor(logger?: AnalysisLogger) {
     this.logger = logger;
     this.usageTracker = new UsageTrackerImpl(logger);
+    this.apiEndpointAnalyzer = new APIEndpointAnalyzerImpl(logger);
+    this.databaseAnalyzer = new DatabaseAnalyzerImpl(logger);
+    this.connectionMapper = new ConnectionMapperImpl(logger);
+    this.progressIndicator = new APIBackendProgressIndicatorImpl(logger);
   }
 
   /**
@@ -1147,6 +1160,236 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    */
   generatePerformanceWarnings(statistics: UsageStatistics): PerformanceWarning[] {
     return this.usageTracker.generatePerformanceWarnings(statistics);
+  }
+
+  /**
+   * Analyzes API and backend components
+   * Phase 4.3: API and Backend Analysis implementation
+   * 
+   * @param components - Array of component information
+   * @param files - Array of files to analyze
+   * @returns Promise<DependencyGraph> - Updated dependency graph with API and backend analysis
+   */
+  async analyzeAPIAndBackend(components: ComponentInfo[], files: FileInfo[]): Promise<DependencyGraph> {
+    try {
+      if (this.logger) {
+        this.logger.logInfo('Starting API and Backend Analysis', {
+          componentCount: components.length,
+          fileCount: files.length
+        });
+      }
+
+      // Start progress tracking
+      this.progressIndicator.reset();
+
+      // Step 1: Analyze API endpoints in backend files
+      this.progressIndicator.startStep('api_endpoint_analysis');
+      const backendFiles = files.filter(file => this.isBackendFile(file));
+      const backendAnalysis = this.apiEndpointAnalyzer.analyzeBackendFiles(backendFiles);
+      this.progressIndicator.completeStep('api_endpoint_analysis');
+
+      // Step 2: Analyze database operations
+      this.progressIndicator.startStep('database_operations_analysis');
+      const databaseAnalysis = this.databaseAnalyzer.analyzeDatabaseOperations(files);
+      this.progressIndicator.completeStep('database_operations_analysis');
+
+      // Step 3: Map frontend-backend connections
+      this.progressIndicator.startStep('frontend_backend_mapping');
+      const apiCalls = this.traceAPICalls(components);
+      const connectionMapping = this.connectionMapper.mapFrontendBackendConnections(
+        components,
+        backendAnalysis.routes,
+        apiCalls,
+        databaseAnalysis.operations
+      );
+      this.progressIndicator.completeStep('frontend_backend_mapping');
+
+      // Step 4: Identify used/unused endpoints
+      this.progressIndicator.startStep('used_unused_identification');
+      const updatedBackendAnalysis = this.apiEndpointAnalyzer.identifyUsedUnusedEndpoints(
+        backendAnalysis,
+        apiCalls
+      );
+      const updatedDatabaseAnalysis = this.databaseAnalyzer.identifyUsedUnusedEntities(
+        databaseAnalysis,
+        databaseAnalysis.operations
+      );
+      this.progressIndicator.completeStep('used_unused_identification');
+
+            // Step 5: Detect backend dead code
+            this.progressIndicator.startStep('dead_code_detection');
+            this.detectBackendDeadCode(
+              updatedBackendAnalysis,
+              updatedDatabaseAnalysis
+            );
+            this.progressIndicator.completeStep('dead_code_detection');
+
+            // Step 6: Analyze connection quality
+            this.progressIndicator.startStep('connection_quality_analysis');
+            this.connectionMapper.analyzeConnectionQuality(connectionMapping);
+            this.progressIndicator.completeStep('connection_quality_analysis');
+
+      // Step 7: Create graph nodes
+      this.progressIndicator.startStep('graph_node_creation');
+      const existingNodes = this.createNodesFromComponents(components, new Map());
+      const apiNodes = this.apiEndpointAnalyzer.mapRoutesToNodes(updatedBackendAnalysis);
+      const databaseNodes = this.databaseAnalyzer.mapDatabaseEntitiesToNodes(updatedDatabaseAnalysis);
+      const allNodes = [...existingNodes, ...apiNodes, ...databaseNodes];
+      this.progressIndicator.completeStep('graph_node_creation');
+
+      // Step 8: Create edges
+      this.progressIndicator.startStep('edge_creation');
+      const existingEdges = this.createEdges(allNodes);
+      const connectionEdges = this.connectionMapper.createConnectionEdges(
+        connectionMapping.connections,
+        allNodes
+      );
+      const allEdges = [...existingEdges, ...connectionEdges];
+      this.progressIndicator.completeStep('edge_creation');
+
+      // Create final graph
+      const metadata = this.createGraphMetadata(components, allNodes, allEdges);
+      metadata.statistics.deadCodeNodes = allNodes.filter(n => n.liveCodeScore === 0).length;
+      metadata.statistics.liveCodeNodes = allNodes.filter(n => n.liveCodeScore === 100).length;
+
+      const graph: DependencyGraph = {
+        nodes: allNodes,
+        edges: allEdges,
+        metadata
+      };
+
+      // Log progress summary
+      this.progressIndicator.logProgressSummary();
+
+      if (this.logger) {
+        this.logger.logInfo('API and Backend Analysis completed', {
+          totalNodes: graph.nodes.length,
+          totalEdges: graph.edges.length,
+          deadCodeNodes: graph.metadata.statistics.deadCodeNodes,
+          liveCodeNodes: graph.metadata.statistics.liveCodeNodes,
+          apiEndpoints: updatedBackendAnalysis.totalEndpoints,
+          databaseEntities: updatedDatabaseAnalysis.tables.length + updatedDatabaseAnalysis.views.length,
+          connections: connectionMapping.totalConnections,
+          deadCodePercentage: updatedBackendAnalysis.deadCodePercentage.toFixed(2)
+        });
+      }
+
+      return graph;
+
+    } catch (error) {
+      const errorMessage = `Failed to analyze API and backend: ${error instanceof Error ? error.message : String(error)}`;
+      
+      if (this.logger) {
+        this.logger.logError(errorMessage, { 
+          error: error instanceof Error ? error.stack : String(error) 
+        });
+      }
+
+      const analysisError: AnalysisError = {
+        type: 'validation',
+        message: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      };
+      throw analysisError;
+    }
+  }
+
+  /**
+   * Detects dead code in backend components
+   * Phase 4.3: Backend Dead Code Detection
+   * 
+   * @param backendAnalysis - Backend analysis result
+   * @param databaseAnalysis - Database analysis result
+   * @returns DeadCodeInfo[] - Array of dead code information
+   */
+  private detectBackendDeadCode(
+    backendAnalysis: BackendRouteAnalysis,
+    databaseAnalysis: DatabaseAnalysis
+  ): DeadCodeInfo[] {
+    const deadCode: DeadCodeInfo[] = [];
+
+    // Add unused API endpoints
+    for (const endpoint of backendAnalysis.unusedEndpoints) {
+      deadCode.push({
+        id: `dead_api_${endpoint.name.replace(/\s+/g, '_').toLowerCase()}`,
+        type: 'api',
+        name: endpoint.name,
+        file: endpoint.file,
+        line: endpoint.line,
+        column: endpoint.column,
+        reason: 'no_incoming_edges',
+        confidence: 100,
+        suggestions: [
+          'Remove unused API endpoint',
+          'Check if endpoint should be documented',
+          'Verify if endpoint is used by external systems'
+        ],
+        impact: 'high'
+      });
+    }
+
+    // Add unused database tables
+    for (const table of databaseAnalysis.unusedTables) {
+      deadCode.push({
+        id: `dead_table_${table.name}`,
+        type: 'database',
+        name: table.name,
+        file: table.file,
+        line: table.line,
+        column: table.column,
+        reason: 'no_incoming_edges',
+        confidence: 100,
+        suggestions: [
+          'Remove unused database table',
+          'Check if table is used by external systems',
+          'Verify if table contains important data'
+        ],
+        impact: 'high'
+      });
+    }
+
+    // Add unused database views
+    for (const view of databaseAnalysis.unusedViews) {
+      deadCode.push({
+        id: `dead_view_${view.name}`,
+        type: 'database',
+        name: view.name,
+        file: view.file,
+        line: view.line,
+        column: view.column,
+        reason: 'no_incoming_edges',
+        confidence: 100,
+        suggestions: [
+          'Remove unused database view',
+          'Check if view is used by external systems',
+          'Verify if view provides important data'
+        ],
+        impact: 'medium'
+      });
+    }
+
+    return deadCode;
+  }
+
+  /**
+   * Checks if file is a backend file
+   * @param file - File to check
+   * @returns boolean - True if it's a backend file
+   */
+  private isBackendFile(file: FileInfo): boolean {
+    const backendPatterns = [
+      /server\.(ts|js)$/,
+      /routes?\.(ts|js)$/,
+      /api\.(ts|js)$/,
+      /middleware\.(ts|js)$/,
+      /controllers?\.(ts|js)$/,
+      /\/routes?\//,
+      /\/api\//,
+      /\/server\//,
+      /\/backend\//
+    ];
+
+    return backendPatterns.some(pattern => pattern.test(file.path || file.name || ''));
   }
 }
 

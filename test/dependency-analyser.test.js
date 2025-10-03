@@ -14,7 +14,7 @@ describe('Dependency Analyzer', () => {
 
   beforeEach(() => {
     // Initialize logger and analyzer
-    logger = new AnalysisLogger('test-repo');
+    logger = new AnalysisLogger('testrepo');
     analyzer = new DependencyAnalyzerImpl(logger);
   });
 
