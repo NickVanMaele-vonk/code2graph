@@ -65,10 +65,10 @@ Details on DependencyAnalyzer
 ✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
 ✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
 
-**Phase 4 - Middleware traversal - Ongoing**: Usage tracking and dead code detection
+**Phase 4 - Middleware traversal - Complete**: Usage tracking and dead code detection
 4.1 Usage Tracking - COMPLETE
 4.2 Alive/Dead Code Analysis - COMPLETE
-4.3 API and Backend Analysis - PARTIALLY STARTED
+4.3 API and Backend Analysis - COMPLETE
 
 ✅ API endpoint analysis: traceAPICalls()
 ✅ Service dependency analysis: analyzeServiceDependencies()
@@ -87,21 +87,17 @@ Details on DependencyAnalyzer
 ✅ Usage Statistics: Comprehensive statistics for codebase analysis
 ✅ Performance Warnings: Automatic warnings for large codebases and high dead code percentages
 ✅ Integration with Dependency Analyzer: Seamless integration with existing graph building
+✅ Used/unused API endpoint identification
+✅ Frontend-to-backend connection mapping
+✅ Backend dead code detection and labelling
+✅ Analysis of database views and tables
+✅ API & Backend progress indicator
 ✅ Comprehensive Testing: 100% test coverage with edge cases and error handling
 
 
 ## Next steps
 
 In the project plan, the following steps need to be implemented. 
-
-Phase 4: Middleware traversal (Week 4) — mostly complete
-- 4.3 API and Backend Analysis - PARTIALLY STARTED
-    - TO DO: 
-        - Used/unused API endpoint identification
-        - Frontend-to-backend connection mapping
-        - Backend dead code detection and labelling
-        - Analysis of database views and tables
-        - API & Backend progress indicator
 
 Phase 5: Output Generation (Week 5) — not started
 
