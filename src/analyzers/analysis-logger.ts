@@ -87,8 +87,9 @@ export class AnalysisLogger implements IAnalysisLogger {
       const contextStr = context ? ` | Context: ${JSON.stringify(context)}` : '';
       const logEntry = `[${timestamp}] ${level}: ${message}${contextStr}\n`;
       
-      // Append to log file (creates file if it doesn't exist)
-      await fsBuiltin.appendFile(this.logPath, logEntry);
+      // Use explicit UTF-8 encoding and append mode flag for reliability
+      // This ensures proper file handling across different platforms (Windows, Linux, macOS)
+      await fsBuiltin.appendFile(this.logPath, logEntry, { encoding: 'utf-8', flag: 'a' });
     } catch (logError) {
       // If logging fails, fall back to console output
       console.warn(`Failed to write to log file ${this.logPath}: ${logError}`);

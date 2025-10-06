@@ -1022,18 +1022,22 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   /**
    * Creates JSX usage edges for components that render other components
    * Phase 2 Implementation: Detects when a component renders another component via JSX
-   * Phase 1 Enhancement: Now works at component-level granularity instead of file-level
+   * Phase D Enhancement: Now detects same-file component usage with self-reference prevention
    * 
    * Business Logic:
    * - Identifies JSX element nodes that represent custom React components (capitalized names)
    * - Matches these JSX elements to their component definitions based on name
    * - Creates "renders" edges from the parent component to the rendered component
    * - Handles multiple components per file correctly
+   * - Prevents self-referencing edges (recursion detection)
    * 
    * Example: If MainComponent in index.tsx contains <Hello />, this creates an edge:
    *   MainComponent --renders--> Hello component
    * 
-   * This is crucial for understanding the component hierarchy and rendering flow.
+   * Phase D: Now also detects same-file usage:
+   *   If components.tsx has ParentComponent and ChildComponent,
+   *   and ParentComponent renders <ChildComponent />,
+   *   creates edge: ParentComponent --renders--> ChildComponent
    * 
    * @param allNodes - All available nodes in the graph
    * @returns EdgeInfo[] - Array of JSX usage edges with "renders" relationship
@@ -1055,28 +1059,31 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
 
     // For each JSX element that represents a component usage
     for (const jsxNode of jsxElementNodes) {
-      // Find the component definition that this JSX element references
+      // Phase D: Find the component definition that this JSX element references
+      // REMOVED file restriction to support same-file component usage
       const targetComponentNode = componentNodes.find(compNode => 
-        compNode.label === jsxNode.label && // Same name (e.g., "Hello")
-        compNode.file !== jsxNode.file // Defined in a different file
+        compNode.label === jsxNode.label // Same name (e.g., "Hello")
+        // Phase D: Removed "compNode.file !== jsxNode.file" restriction
       );
 
       if (!targetComponentNode) {
-        // JSX element doesn't reference an external component, skip
+        // JSX element doesn't reference a known component, skip
         continue;
       }
 
       // Find the parent component(s) in the same file as the JSX element
-      // Phase 1: There may be multiple components in the same file
       const parentComponents = componentNodes.filter(compNode => 
         compNode.file === jsxNode.file
       );
 
       // Create edges from each parent component to the target component
-      // Phase 1 Logic: If multiple components in file, they all potentially use the JSX element
-      // In a more sophisticated version, we would track which specific component owns which JSX elements
-      // For now, we assume all components in the file can use the JSX elements in that file
       for (const parentComponent of parentComponents) {
+        // Phase D: Prevent self-referencing (recursion detection)
+        // If ParentComponent renders <ParentComponent />, don't create edge
+        if (parentComponent.id === targetComponentNode.id) {
+          continue;
+        }
+        
         edges.push({
           id: this.generateEdgeId(),
           source: parentComponent.id,

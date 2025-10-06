@@ -589,6 +589,108 @@ describe('Dependency Analyzer', () => {
       assert.ok(formToInput, 'Form should render Input');
     });
 
+    // Phase D tests: Same-file component usage support
+    it('should create JSX usage edges for components in the same file', () => {
+      const nodes = [
+        // ParentComponent definition in components.tsx
+        {
+          id: 'comp1',
+          label: 'ParentComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // ChildComponent definition in components.tsx
+        {
+          id: 'comp2',
+          label: 'ChildComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // ChildComponent JSX element usage in components.tsx
+        {
+          id: 'jsx1',
+          label: 'ChildComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { elementType: 'display' }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const renderEdges = edges.filter(e => e.relationship === 'renders');
+
+      // Phase D: Should detect same-file component usage
+      assert.strictEqual(renderEdges.length, 1, 'Should create one render edge for same-file usage');
+      assert.strictEqual(renderEdges[0].source, 'comp1', 'ParentComponent should be the source');
+      assert.strictEqual(renderEdges[0].target, 'comp2', 'ChildComponent should be the target');
+      assert.strictEqual(renderEdges[0].properties.usageFile, '/app/components.tsx');
+      assert.strictEqual(renderEdges[0].properties.definitionFile, '/app/components.tsx');
+    });
+
+    it('should not create self-referencing render edges', () => {
+      const nodes = [
+        // RecursiveComponent definition
+        {
+          id: 'comp1',
+          label: 'RecursiveComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // RecursiveComponent JSX element (component rendering itself)
+        {
+          id: 'jsx1',
+          label: 'RecursiveComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { elementType: 'display' }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const renderEdges = edges.filter(e => e.relationship === 'renders');
+
+      // Phase D: Should prevent self-referencing edges
+      assert.strictEqual(renderEdges.length, 0, 'Should not create self-referencing render edges');
+    });
+
     // Phase C tests: External dependency consolidation
     it('should consolidate multiple imports from same external package', () => {
       const components = [
