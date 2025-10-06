@@ -1008,6 +1008,7 @@ export class DatabaseAnalyzerImpl {
         file: table.file,
         line: table.line,
         column: table.column,
+        codeOwnership: 'internal', // Phase A: Database tables are part of custom schema
         properties: {
           type: 'table',
           operations: table.operations.map(op => op.operation),
@@ -1031,6 +1032,7 @@ export class DatabaseAnalyzerImpl {
         file: view.file,
         line: view.line,
         column: view.column,
+        codeOwnership: 'internal', // Phase A: Database views are part of custom schema
         properties: {
           type: 'view',
           operations: view.operations.map(op => op.operation),

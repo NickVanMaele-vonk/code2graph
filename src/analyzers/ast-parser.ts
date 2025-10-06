@@ -25,7 +25,8 @@ import {
   JSXElementInfo,
   InformativeElementInfo,
   ComponentDefinitionInfo,
-  AnalysisError
+  AnalysisError,
+  EventHandler // ADDED (Phase A): For structured event handler objects
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
 
@@ -286,6 +287,7 @@ export class ASTParserImpl {
   /**
    * Extracts informative elements from AST
    * Identifies elements that exchange internal data with users
+   * UPDATED (Phase B): Now tracks parent component context during traversal
    * 
    * @param ast - The AST to analyze
    * @param filePath - Path to the file being analyzed
@@ -293,10 +295,122 @@ export class ASTParserImpl {
    */
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[] {
     const informativeElements: InformativeElementInfo[] = [];
+    let currentComponentName: string | undefined;
+    const componentStack: string[] = []; // Track nested components
 
-    // Detect different types of informative elements
-    informativeElements.push(...this.detectDisplayElements(ast));
-    informativeElements.push(...this.detectInputElements(ast));
+    // Phase B: Single traversal with component context tracking (scope-based, not line-number-based)
+    const visitor: Visitor = {
+      // Track when we enter a function declaration component
+      FunctionDeclaration: {
+        enter: (path) => {
+          const funcName = path.node.id?.name;
+          if (funcName && this.isComponentName(funcName) && this.functionReturnsJSX(path.node)) {
+            currentComponentName = funcName;
+            componentStack.push(funcName);
+          }
+        },
+        exit: (path) => {
+          const funcName = path.node.id?.name;
+          if (funcName && componentStack[componentStack.length - 1] === funcName) {
+            componentStack.pop();
+            currentComponentName = componentStack[componentStack.length - 1];
+          }
+        }
+      },
+      
+      // Track arrow function components assigned to variables
+      VariableDeclarator: {
+        enter: (path) => {
+          const varName = t.isIdentifier(path.node.id) ? path.node.id.name : undefined;
+          if (varName && this.isComponentName(varName)) {
+            const init = path.node.init;
+            if ((t.isArrowFunctionExpression(init) || t.isFunctionExpression(init)) && 
+                this.functionReturnsJSX(init)) {
+              currentComponentName = varName;
+              componentStack.push(varName);
+            }
+          }
+        },
+        exit: (path) => {
+          const varName = t.isIdentifier(path.node.id) ? path.node.id.name : undefined;
+          if (varName && componentStack[componentStack.length - 1] === varName) {
+            componentStack.pop();
+            currentComponentName = componentStack[componentStack.length - 1];
+          }
+        }
+      },
+      
+      // Track class components
+      ClassDeclaration: {
+        enter: (path) => {
+          const className = path.node.id?.name;
+          if (!className || !this.isComponentName(className)) {
+            return;
+          }
+          
+          // Phase B: Check if class extends React.Component (same logic as extractComponentDefinitions)
+          const superClass = path.node.superClass;
+          let extendsComponent: string | undefined;
+          
+          if (t.isMemberExpression(superClass)) {
+            // React.Component or React.PureComponent
+            if (t.isIdentifier(superClass.object) && t.isIdentifier(superClass.property)) {
+              extendsComponent = `${superClass.object.name}.${superClass.property.name}`;
+            }
+          } else if (t.isIdentifier(superClass)) {
+            // Component or PureComponent (imported directly)
+            extendsComponent = superClass.name;
+          }
+          
+          // Set component context if it extends a React component
+          if (extendsComponent && this.isReactComponent(extendsComponent)) {
+            currentComponentName = className;
+            componentStack.push(className);
+          }
+        },
+        exit: (path) => {
+          const className = path.node.id?.name;
+          // Only pop if this class is on the stack
+          if (className && componentStack.length > 0 && componentStack[componentStack.length - 1] === className) {
+            componentStack.pop();
+            currentComponentName = componentStack.length > 0 ? componentStack[componentStack.length - 1] : undefined;
+          }
+        }
+      },
+      
+      // Process JSX elements with current component context
+      JSXElement: {
+        enter: (path) => {
+          const hasBinding = this.hasDataBinding(path.node);
+          const hasHandlers = this.hasEventHandlers(path.node);
+        
+        // Phase B: Only create ONE element per JSX node, even if it has both binding and handlers
+        if (hasBinding || hasHandlers) {
+          const elementInfo: InformativeElementInfo = {
+            // Prioritize 'input' type if has event handlers (user interaction is primary purpose)
+            type: hasHandlers ? 'input' : 'display',
+            name: this.getJSXElementName(path.node),
+            elementType: 'JSXElement',
+            props: this.extractJSXProps(path.node),
+            // Include event handlers if present
+            eventHandlers: hasHandlers ? this.extractEventHandlers(path.node) : [],
+            // Include data bindings if present
+            dataBindings: hasBinding ? this.extractDataBindings(path.node) : [],
+            line: path.node.loc?.start.line,
+            column: path.node.loc?.start.column,
+            file: filePath,
+            parentComponent: currentComponentName // Phase B: Track parent component
+          };
+          informativeElements.push(elementInfo);
+        }
+        }
+      }
+    };
+
+    traverseFunction(ast as t.Node, visitor);
+
+    // Phase B: Only detect data sources and state management separately
+    // Display and input elements are now detected in the main visitor with parent tracking
     informativeElements.push(...this.detectDataSources(ast));
     informativeElements.push(...this.detectStateManagement(ast));
 
@@ -327,6 +441,13 @@ export class ASTParserImpl {
    */
   extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[] {
     const components: ComponentDefinitionInfo[] = [];
+    
+    // Phase B: Only process React files
+    // Exclude config files and non-React files to avoid false positives
+    if (!this.isReactFile(filePath, ast)) {
+      return [];
+    }
+    
     const exportedNames = new Set<string>();
 
     // First pass: collect all exported names
@@ -801,15 +922,22 @@ export class ASTParserImpl {
 
   /**
    * Extracts event handlers from a JSX element
+   * UPDATED (Phase A): Now returns EventHandler[] objects with structured information
    * @param node - The JSX element node
-   * @returns string[] - Array of event handler names
+   * @returns EventHandler[] - Array of event handler objects with name, type, and handler function
    */
-  private extractEventHandlers(node: t.JSXElement): string[] {
-    const handlers: string[] = [];
+  private extractEventHandlers(node: t.JSXElement): EventHandler[] {
+    const handlers: EventHandler[] = [];
     
     node.openingElement.attributes?.forEach((attr: t.JSXAttribute | t.JSXSpreadAttribute) => {
       if (t.isJSXAttribute(attr) && t.isJSXIdentifier(attr.name) && attr.name.name.match(/^on[A-Z]/)) {
-        handlers.push(attr.name.name);
+        // Phase A: Create EventHandler object with basic structure
+        // Future phases (B, G) will enhance this to extract actual handler functions
+        handlers.push({
+          name: attr.name.name,
+          type: 'unknown', // Will be enhanced in Phase G to detect function-reference, arrow-function, etc.
+          handler: attr.name.name // Placeholder - Phase G will extract actual function names
+        });
       }
     });
 
@@ -922,6 +1050,61 @@ export class ASTParserImpl {
     if (!name || name.length === 0) return false;
     const firstChar = name.charAt(0);
     return firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
+  }
+
+  /**
+   * Gets the superclass name from a superClass expression
+   * Phase B: Helper for extracting superclass names from class components
+   * @param superClass - The superClass expression
+   * @returns string - The superclass name
+   */
+  private getSuperClassName(superClass: t.Expression): string {
+    if (t.isMemberExpression(superClass)) {
+      if (t.isIdentifier(superClass.object) && t.isIdentifier(superClass.property)) {
+        return `${superClass.object.name}.${superClass.property}`;
+      }
+    } else if (t.isIdentifier(superClass)) {
+      return superClass.name;
+    }
+    return '';
+  }
+
+  /**
+   * Checks if a file is a React file
+   * Phase B: Filters component detection to React files only
+   * @param filePath - Path to the file being analyzed
+   * @param ast - The AST of the file
+   * @returns boolean - True if file should be analyzed for React components
+   */
+  private isReactFile(filePath: string, ast: ASTNode): boolean {
+    // Exclude common config file patterns (webpack, vite, rollup, etc.)
+    const excludePatterns = [
+      /\.config\.(js|ts)$/,
+      /webpack\./,
+      /vite\./,
+      /rollup\./,
+      /babel\.config/,
+      /jest\.config/
+    ];
+    
+    if (excludePatterns.some(pattern => pattern.test(filePath))) {
+      return false;
+    }
+    
+    // Check file extension - .tsx and .jsx are definitely React files
+    if (filePath.endsWith('.tsx') || filePath.endsWith('.jsx')) {
+      return true;
+    }
+    
+    // For .ts and .js files, check if file imports React
+    const imports = this.extractImports(ast);
+    const hasReactImport = imports.some(imp => 
+      imp.source === 'react' || 
+      imp.source === 'react-dom' ||
+      imp.source.startsWith('react/')
+    );
+    
+    return hasReactImport;
   }
 
   /**

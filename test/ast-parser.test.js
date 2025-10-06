@@ -504,5 +504,142 @@ describe('AST Parser', () => {
 
       assert.strictEqual(components.length, 0);
     });
+
+    // Phase B Tests: React File Filtering
+    it('should not extract components from webpack.config.js', async () => {
+      const testFile = path.join(tempDir, 'webpack.config.js');
+      const content = `
+        module.exports = {
+          entry: './src/index.js',
+          output: {
+            path: __dirname + '/dist',
+            filename: 'bundle.js'
+          }
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 0);
+    });
+
+    it('should not extract components from .js files without React imports', async () => {
+      const testFile = path.join(tempDir, 'utility.js');
+      const content = `
+        export const formatDate = (date) => {
+          return date.toISOString();
+        };
+        
+        export const Helper = () => {
+          return { data: 'test' };
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 0);
+    });
+
+    it('should extract components from .js files with React imports', async () => {
+      const testFile = path.join(tempDir, 'component.js');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return <div>Hello</div>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const components = parser.extractComponentDefinitions(ast, testFile);
+
+      assert.strictEqual(components.length, 1);
+      assert.strictEqual(components[0].name, 'MyComponent');
+    });
+  });
+
+  // Phase B Tests: Parent Component Tracking
+  describe('extractInformativeElements - Parent Component Tracking', () => {
+    it('should track parent component for JSX elements', async () => {
+      const testFile = path.join(tempDir, 'multicomponent.tsx');
+      const content = `
+        import React from 'react';
+        
+        function ParentComponent() {
+          return <button onClick={handleClick}>Click</button>;
+        }
+        
+        function SiblingComponent() {
+          return <input type="text" onChange={handleChange} />;
+        }
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      const inputElement = elements.find(e => e.name === 'input');
+
+      assert.ok(buttonElement, 'Button element should be found');
+      assert.ok(inputElement, 'Input element should be found');
+      assert.strictEqual(buttonElement.parentComponent, 'ParentComponent');
+      assert.strictEqual(inputElement.parentComponent, 'SiblingComponent');
+    });
+
+    it('should track parent component in files with multiple components', async () => {
+      const testFile = path.join(tempDir, 'multi.tsx');
+      const content = `
+        import React from 'react';
+        
+        const ComponentA = () => {
+          return <div onClick={handlerA}>Component A</div>;
+        };
+        
+        const ComponentB = () => {
+          return <div onClick={handlerB}>Component B</div>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      // Should have 2 div elements with different parent components
+      const divElements = elements.filter(e => e.name === 'div');
+      assert.strictEqual(divElements.length, 2);
+      
+      const divA = divElements.find(e => e.parentComponent === 'ComponentA');
+      const divB = divElements.find(e => e.parentComponent === 'ComponentB');
+      
+      assert.ok(divA, 'Should have div from ComponentA');
+      assert.ok(divB, 'Should have div from ComponentB');
+    });
+
+    it('should handle class components with parent tracking', async () => {
+      const testFile = path.join(tempDir, 'class-component.tsx');
+      const content = `
+        import React from 'react';
+        
+        class MyClassComponent extends React.Component {
+          render() {
+            return <button onClick={this.handleClick}>Submit</button>;
+          }
+        }
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      assert.strictEqual(buttonElement.parentComponent, 'MyClassComponent');
+    });
   });
 });

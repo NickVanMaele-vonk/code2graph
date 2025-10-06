@@ -607,6 +607,7 @@ export class APIEndpointAnalyzerImpl {
         file: route.file,
         line: route.line,
         column: route.column,
+        codeOwnership: 'internal', // Phase A: API endpoints are custom code
         properties: {
           method: route.method,
           path: route.path,
@@ -630,6 +631,7 @@ export class APIEndpointAnalyzerImpl {
         datatype: 'array' as DataType,
         liveCodeScore: 100, // Middleware is assumed to be used
         file: 'unknown',
+        codeOwnership: 'internal', // Phase A: Middleware are custom code functions
         properties: {
           type: 'middleware',
           isMiddleware: true

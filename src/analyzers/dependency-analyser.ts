@@ -94,8 +94,8 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       // Create nodes from components
       const nodes = this.createNodesFromComponents(components, liveCodeScores);
 
-      // Create edges between nodes
-      const edges = this.createEdges(nodes);
+      // Phase C: Create edges between nodes (now includes component info for import edges)
+      const edges = this.createEdges(nodes, components);
 
       // Create metadata
       const metadata = this.createGraphMetadata(components, nodes, edges);
@@ -321,24 +321,18 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * Implements edge creation rules from the architecture document
    * 
    * Phase 2 Enhancement: Added JSX usage edge creation to capture component rendering relationships
-   * This is critical for building a complete dependency graph where we can see which components
-   * render which other components (e.g., MainComponent renders Hello component).
+   * Phase C Enhancement: Added consolidated import edge creation to external packages
    * 
    * @param nodes - Array of nodes to create edges for
+   * @param components - Optional array of component information for import edge creation
    * @returns EdgeInfo[] - Array of edge information
    */
-  createEdges(nodes: NodeInfo[]): EdgeInfo[] {
+  createEdges(nodes: NodeInfo[], components?: ComponentInfo[]): EdgeInfo[] {
     const edges: EdgeInfo[] = [];
 
     try {
       // Create edges based on node relationships
       for (const node of nodes) {
-        // Create edges for component imports
-        if (node.nodeType === 'function' && node.nodeCategory === 'front end') {
-          const importEdges = this.createImportEdges(node, nodes);
-          edges.push(...importEdges);
-        }
-
         // Create edges for API calls
         if (node.nodeType === 'API') {
           const apiEdges = this.createAPIEdges(node, nodes);
@@ -350,6 +344,13 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
           const dbEdges = this.createDatabaseEdges();
           edges.push(...dbEdges);
         }
+      }
+
+      // Phase C: Create import edges from components to consolidated external packages
+      // This replaces the old per-import edge creation with consolidated package edges
+      if (components) {
+        const importEdges = this.createConsolidatedImportEdges(nodes, components);
+        edges.push(...importEdges);
       }
 
       // Phase 2: Create JSX usage edges (component A renders component B)
@@ -744,28 +745,187 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo[] - Array of created nodes
    */
+  /**
+   * Phase C: Creates nodes from components with consolidated external dependencies
+   * - Component nodes (internal code) created for each component
+   * - Informative element nodes (JSX elements) created for each element
+   * - External package nodes consolidated (one per package, not per import)
+   * @param components - Array of components to analyze
+   * @param liveCodeScores - Map of component IDs to live code scores
+   * @returns NodeInfo[] - Array of created nodes
+   */
   private createNodesFromComponents(components: ComponentInfo[], liveCodeScores: Map<string, number>): NodeInfo[] {
     const nodes: NodeInfo[] = [];
 
+    // Phase C: Create component nodes (internal code)
     for (const component of components) {
-      // Create main component node with live code score
       const componentNode = this.createComponentNode(component, liveCodeScores);
       nodes.push(componentNode);
 
-      // Create nodes for informative elements
+      // Create nodes for informative elements (JSX elements)
       for (const element of component.informativeElements) {
         const elementNode = this.createElementNode(element, component.file, liveCodeScores);
         nodes.push(elementNode);
       }
-
-      // Create nodes for imports
-      for (const importInfo of component.imports) {
-        const importNode = this.createImportNode(importInfo, component.file, liveCodeScores);
-        nodes.push(importNode);
-      }
     }
 
+    // Phase C: Create consolidated external dependency nodes (one per package)
+    const externalPackages = this.consolidateExternalImports(components);
+    nodes.push(...externalPackages.values());
+
     return nodes;
+  }
+
+  /**
+   * Phase C: Checks if an import source is an external package
+   * External packages don't start with './' or '../'
+   * @param importSource - Import source string (e.g., 'react', './MyComponent')
+   * @returns boolean - True if external package
+   */
+  private isExternalPackage(importSource: string): boolean {
+    return !importSource.startsWith('./') && !importSource.startsWith('../');
+  }
+
+  /**
+   * Phase C: Extracts package name from import source
+   * Handles scoped packages (e.g., '@babel/core' → '@babel/core')
+   * Handles sub-paths (e.g., 'react-dom/client' → 'react-dom')
+   * @param importSource - Import source string
+   * @returns string - Package name
+   */
+  private getPackageName(importSource: string): string {
+    const parts = importSource.split('/');
+    // Scoped packages like '@babel/core'
+    if (parts[0].startsWith('@')) {
+      return `${parts[0]}/${parts[1]}`;
+    }
+    // Regular packages
+    return parts[0];
+  }
+
+  /**
+   * Phase C: Consolidates external imports into single package nodes
+   * Creates one node per external package instead of one per import statement
+   * @param components - Array of components to analyze
+   * @returns Map<string, NodeInfo> - Map of package names to consolidated nodes
+   */
+  private consolidateExternalImports(components: ComponentInfo[]): Map<string, NodeInfo> {
+    const externalPackages = new Map<string, NodeInfo>();
+    
+    for (const component of components) {
+      for (const importInfo of component.imports) {
+        if (this.isExternalPackage(importInfo.source)) {
+          const packageName = this.getPackageName(importInfo.source);
+          
+          if (!externalPackages.has(packageName)) {
+            externalPackages.set(packageName, {
+              id: this.generateNodeId(),
+              label: packageName,
+              nodeType: 'external-dependency',
+              nodeCategory: 'library',
+              datatype: 'array',
+              liveCodeScore: 100, // External packages are always "live" infrastructure
+              file: '', // No specific file - it's a package
+              codeOwnership: 'external',
+              isInfrastructure: true,
+              properties: {
+                packageName: packageName,
+                importType: 'external'
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    return externalPackages;
+  }
+
+  /**
+   * Phase C: Creates import edges from components to consolidated external packages
+   * Also creates edges for internal imports (component to component)
+   * @param allNodes - All nodes in the graph
+   * @param components - Array of components with import information
+   * @returns EdgeInfo[] - Array of import edges
+   */
+  private createConsolidatedImportEdges(allNodes: NodeInfo[], components: ComponentInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    for (const component of components) {
+      // Find the component node for this component
+      const componentNode = allNodes.find(n => 
+        n.label === component.name && 
+        n.file === component.file &&
+        n.codeOwnership === 'internal'
+      );
+      
+      if (!componentNode) continue;
+      
+      for (const importInfo of component.imports) {
+        if (this.isExternalPackage(importInfo.source)) {
+          // External import - find consolidated external package node
+          const packageName = this.getPackageName(importInfo.source);
+          const packageNode = allNodes.find(n => 
+            n.label === packageName && 
+            n.nodeType === 'external-dependency'
+          );
+          
+          if (packageNode) {
+            edges.push({
+              id: this.generateEdgeId(),
+              source: componentNode.id,
+              target: packageNode.id,
+              relationship: 'imports',
+              properties: {
+                importType: 'external',
+                packageName: packageName,
+                importSource: importInfo.source
+              }
+            });
+          }
+        } else {
+          // Internal import - find the actual component node
+          // Handle relative imports like './components/Hello' or '../Hello'
+          const targetComponent = allNodes.find(n => 
+            n.codeOwnership === 'internal' &&
+            this.matchesImportPath(n, importInfo.source)
+          );
+          
+          if (targetComponent) {
+            edges.push({
+              id: this.generateEdgeId(),
+              source: componentNode.id,
+              target: targetComponent.id,
+              relationship: 'imports',
+              properties: {
+                importType: 'internal',
+                importSource: importInfo.source
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    return edges;
+  }
+
+  /**
+   * Phase C: Checks if a node matches an import path
+   * Uses simple heuristic: extracts component name from last part of path
+   * @param node - Node to check
+   * @param importPath - Import path (e.g., './components/Hello', '../Hello')
+   * @returns boolean - True if node matches the import path
+   */
+  private matchesImportPath(node: NodeInfo, importPath: string): boolean {
+    // Simple heuristic: extract the component name from the import path
+    // './components/Hello' → 'Hello'
+    // '../Hello' → 'Hello'
+    const parts = importPath.split('/');
+    const lastPart = parts[parts.length - 1];
+    
+    // Check if node label matches the last part of the import path
+    return node.label === lastPart;
   }
 
   /**
@@ -790,6 +950,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       file: component.file,
       line: component.line,
       column: component.column,
+      codeOwnership: 'internal', // Phase A: React components are custom code
       properties: {
         type: component.type,
         props: component.props,
@@ -841,6 +1002,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       datatype,
       liveCodeScore,
       file,
+      codeOwnership: 'internal', // Phase A: JSX elements are part of custom UI code
       properties: {
         elementType: element.type,
         props: element.props,
@@ -851,60 +1013,11 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   }
 
   /**
-   * Creates a node for an import
-   * @param importInfo - Import information
-   * @param file - File path
-   * @param liveCodeScores - Map of component IDs to live code scores
-   * @returns NodeInfo - Created import node
+   * Phase C Note: createImportNode and createImportEdges methods removed
+   * Replaced by consolidateExternalImports() and createConsolidatedImportEdges()
+   * Old approach created one node per import statement
+   * New approach creates one node per external package (consolidated)
    */
-  private createImportNode(importInfo: ImportInfo, file: string, liveCodeScores: Map<string, number>): NodeInfo {
-    // Find the usage info for this import to get the live code score
-    const importId = `import_${importInfo.source}`;
-    const liveCodeScore = liveCodeScores.get(importId) ?? 100;
-
-    return {
-      id: this.generateNodeId(),
-      label: importInfo.source,
-      nodeType: 'function' as NodeType,
-      nodeCategory: 'front end' as NodeCategory,
-      datatype: 'array' as DataType,
-      liveCodeScore,
-      file,
-      properties: {
-        importType: 'external',
-        specifiers: importInfo.specifiers.map((s: { name: string; type: string }) => ({ name: s.name, type: s.type }))
-      }
-    };
-  }
-
-  /**
-   * Creates import edges for a node
-   * @param node - Source node
-   * @param allNodes - All available nodes
-   * @returns EdgeInfo[] - Array of import edges
-   */
-  private createImportEdges(node: NodeInfo, allNodes: NodeInfo[]): EdgeInfo[] {
-    const edges: EdgeInfo[] = [];
-    
-    // Find imported components and create edges
-    const imports = (node.properties.specifiers as Array<{ name: string; type: string }>) || [];
-    for (const importSpec of imports) {
-      const targetNode = allNodes.find(n => n.label === importSpec.name);
-      if (targetNode) {
-        edges.push({
-          id: this.generateEdgeId(),
-          source: node.id,
-          target: targetNode.id,
-          relationship: 'imports' as RelationshipType,
-          properties: {
-            importType: importSpec.type
-          }
-        });
-      }
-    }
-
-    return edges;
-  }
 
   /**
    * Creates JSX usage edges for components that render other components

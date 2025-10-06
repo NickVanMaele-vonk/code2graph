@@ -313,11 +313,8 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
                 type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
                 name: el.name,
                 props: el.props,
-                eventHandlers: el.eventHandlers.map(handler => ({
-                  name: handler,
-                  type: 'click',
-                  handler: handler
-                })),
+                // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
+                eventHandlers: el.eventHandlers,
                 dataBindings: el.dataBindings.map(binding => ({
                   source: binding,
                   target: 'element',
@@ -345,11 +342,8 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
               type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
               name: el.name,
               props: el.props,
-              eventHandlers: el.eventHandlers.map(handler => ({
-                name: handler,
-                type: 'click',
-                handler: handler
-              })),
+              // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
+              eventHandlers: el.eventHandlers,
               dataBindings: el.dataBindings.map(binding => ({
                 source: binding,
                 target: 'element',

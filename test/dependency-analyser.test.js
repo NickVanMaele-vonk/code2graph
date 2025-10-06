@@ -56,8 +56,15 @@ describe('Dependency Analyzer', () => {
       assert.ok(graph.nodes);
       assert.ok(graph.edges);
       assert.ok(graph.metadata);
-      assert.strictEqual(graph.nodes.length, 3); // Component + element + import
+      // Phase C: Now creates component + element + consolidated external package (react)
+      assert.strictEqual(graph.nodes.length, 3); // Component + element + external package
       assert.strictEqual(graph.metadata.statistics.totalNodes, 3);
+      
+      // Phase C: Verify external package node exists
+      const reactNode = graph.nodes.find(n => n.label === 'react' && n.nodeType === 'external-dependency');
+      assert.ok(reactNode, 'Should have consolidated react package node');
+      assert.strictEqual(reactNode.codeOwnership, 'external');
+      assert.strictEqual(reactNode.isInfrastructure, true);
     });
 
     it('should handle empty component array', () => {
@@ -580,6 +587,65 @@ describe('Dependency Analyzer', () => {
         e.source === 'node3' && e.target === 'node2'
       );
       assert.ok(formToInput, 'Form should render Input');
+    });
+
+    // Phase C tests: External dependency consolidation
+    it('should consolidate multiple imports from same external package', () => {
+      const components = [
+        {
+          name: 'ComponentA',
+          type: 'functional',
+          file: '/src/ComponentA.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [
+            { source: 'react', specifiers: [{ name: 'useState', type: 'named' }] },
+            { source: 'react-dom', specifiers: [{ name: 'render', type: 'named' }] }
+          ],
+          exports: []
+        },
+        {
+          name: 'ComponentB',
+          type: 'functional',
+          file: '/src/ComponentB.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [
+            { source: 'react', specifiers: [{ name: 'useEffect', type: 'named' }] },
+            { source: 'react-dom/client', specifiers: [{ name: 'createRoot', type: 'named' }] }
+          ],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+
+      // Should have 2 components + 2 consolidated external packages (react, react-dom)
+      assert.strictEqual(graph.nodes.length, 4);
+
+      // Check for consolidated react package node
+      const reactNode = graph.nodes.find(n => n.label === 'react' && n.nodeType === 'external-dependency');
+      assert.ok(reactNode, 'Should have one consolidated react node');
+      assert.strictEqual(reactNode.codeOwnership, 'external');
+      assert.strictEqual(reactNode.isInfrastructure, true);
+      assert.strictEqual(reactNode.nodeCategory, 'library');
+
+      // Check for consolidated react-dom package node
+      const reactDomNode = graph.nodes.find(n => n.label === 'react-dom' && n.nodeType === 'external-dependency');
+      assert.ok(reactDomNode, 'Should have one consolidated react-dom node');
+      assert.strictEqual(reactDomNode.codeOwnership, 'external');
+
+      // Should have edges from both components to react package
+      const reactImportEdges = graph.edges.filter(e => 
+        e.relationship === 'imports' && e.target === reactNode.id
+      );
+      assert.strictEqual(reactImportEdges.length, 2, 'Both components should import from react');
     });
   });
 
