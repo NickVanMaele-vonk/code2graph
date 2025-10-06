@@ -2,8 +2,8 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
+- **Version**: 1.1
+- **Date**: 2025-10-06
 - **Author**: Nick Van Maele
 - **Project**: code2graph
 
@@ -72,6 +72,11 @@ A specialized tool that:
   - **Primary AST Node Types**: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
   - **Display Elements**: JSX elements with JSXExpressionContainer containing props/state data
   - **Input Elements**: JSX elements with event handlers (onClick, onChange, onSubmit)
+  - **Event Handler Analysis**: Extract function calls from event handlers:
+    - Function references: `onClick={handleClick}` → identifies "handleClick" as target function
+    - Arrow functions: `onClick={() => { func1(); func2(); }}` → identifies ["func1", "func2"] as targets
+    - Inline functions: `onClick={function() { doSomething(); }}` → identifies ["doSomething"] as target
+    - Multiple calls per handler supported for complete data flow tracking
   - **Data Sources**: CallExpression patterns for API calls
   - **State Management**: VariableDeclarator with useState patterns
   - **Node Creation Rules**: Imported components become nodes if used; data arrays/variables become nodes; functions handling data/interaction become nodes; API endpoints normalized with parameters (e.g., :clubid); database tables/views become nodes; conditionally rendered components become nodes; JSX fragments analyzed same as regular JSX
@@ -79,7 +84,8 @@ A specialized tool that:
   - **Naming Conventions**: Use import alias for components; use array variable name for data arrays; use function name for functions; use parameterized form for API endpoints
   - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "middleware", "database"}
   - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports
-  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"calls", "reads", "writes to"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
+  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"imports", "calls", "reads", "writes to", "renders", "contains"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
+  - **Event Handler Edges**: Create "calls" edges from JSX elements to handler functions based on parsed event handler expressions; supports function references, arrow functions, and inline functions; enables complete user interaction flow: User → Button → handleClick → validateInput → API → Database
 - **JSX Element Parsing**: Analyze JSX structure to identify component relationships
 - **Import/Export Mapping**: Track component dependencies and usage
 - **Circular Dependency Detection**: Identify problematic dependency cycles

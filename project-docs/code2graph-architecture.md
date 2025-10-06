@@ -2,8 +2,8 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
+- **Version**: 1.1
+- **Date**: 2025-10-06
 - **Author**: Nick Van Maele
 - **Project**: code2graph
 
@@ -132,6 +132,8 @@ interface ReactAnalyzer {
   detectDataSources(ast: ASTNode): DataSourceInfo[];
   detectStateManagement(ast: ASTNode): StateInfo[];
   collapseDuplicateNodes(nodes: NodeInfo[]): NodeInfo[];
+  extractEventHandlers(jsxElement: ASTNode): EventHandler[];
+  extractFunctionCallsFromHandler(handler: ASTNode): string[];
 }
 ```
 
@@ -140,11 +142,30 @@ interface ReactAnalyzer {
 - Find informative elements using specific AST patterns
 - Detect display elements: JSX elements with JSXExpressionContainer containing props/state data
 - Detect input elements: JSX elements with event handlers (onClick, onChange, onSubmit)
+- **Extract event handler details**: Parse event handler expressions to identify:
+  - Function references: `onClick={handleClick}` → extracts "handleClick"
+  - Arrow functions: `onClick={() => func1(); func2();}` → extracts ["func1", "func2"]
+  - Inline functions: `onClick={function() { doSomething(); }}` → extracts ["doSomething"]
+- **Track function calls in handlers**: Support multiple function calls per event handler for accurate data flow tracing
 - Detect data sources: CallExpression patterns for API calls
 - Detect state management: VariableDeclarator with useState patterns
 - Extract component props and state
 - Analyze component lifecycle and effects
 - Collapse duplicate nodes representing same logical concept
+
+**Event Handler Analysis Implementation:**
+- Extract event handler name (e.g., "onClick", "onChange")
+- Determine handler type (function-reference, arrow-function, function-expression)
+- Parse handler expression to find all function calls
+- Return structured EventHandler objects with full information
+- Enable edge creation from JSX elements → handler functions → APIs → database
+
+**Parent Component Tracking:**
+- Track component context during AST traversal (scope-based, not line-number-based)
+- Assign parentComponent to each JSX element during extraction
+- Enables accurate "contains" edges even with multiple components per file
+- Prevents cross-component edge contamination in files with multiple component definitions
+- Implementation: maintain `currentComponentName` variable during traversal, update when entering/exiting component definitions
 
 #### 2.2.4 Dependency Analyzer (`dependency-analyzer.ts`)
 ```typescript
@@ -168,10 +189,18 @@ interface DependencyAnalyzer {
   - Component → Import (component depends on external library)
   - Component → JSX Element with "contains" relationship (structural parent-child)
   - Component A → Component B with "renders" relationship (component usage)
+  - **JSX Element → Function with "calls" relationship (event handler invocation)**
+  - **JSX Element → API with "calls" relationship (direct API call from handler)**
   - Component → API with "calls" relationship
   - API → Database with "reads" or "writes to" relationship
 - **External dependency handling**: Create one node per external package (not per import statement)
 - Edge types: {"imports", "calls", "renders", "contains", "reads", "writes to", "uses"}
+- **Event handler edge creation**:
+  - Parse event handler expressions (function references, arrow functions, inline functions)
+  - Extract all function calls within event handlers
+  - Create one edge per function call (supports multiple calls per handler)
+  - Edge properties include: eventType (onClick, onChange), handlerType, triggerMechanism (user-interaction)
+  - Enables complete user interaction flow tracing: User → Button → handleClick → validateInput → API → Database
 - Handle multiple outgoing edges for event handlers with multiple function calls
 - Handle multiple edges to multiple table nodes for single fetch operations
 - Normalize API endpoints with parameters (e.g., :clubid instead of specific IDs)
@@ -464,8 +493,21 @@ interface InformativeElement {
   type: ElementType;
   name: string;
   props: Record<string, any>;
-  eventHandlers: EventHandler[];
+  eventHandlers: EventHandler[]; // Full objects with handler analysis details
   dataBindings: DataBinding[];
+  parentComponent?: string; // Name of the component that contains this element (tracked via AST scope)
+}
+
+interface EventHandler {
+  name: string;        // Event name: "onClick", "onChange", "onSubmit"
+  type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
+  handler: string;     // Function(s) called: "handleClick" or "func1, func2, func3"
+}
+
+interface DataBinding {
+  source: string;      // Data source variable or prop
+  target: string;      // Target element or display location
+  type: string;        // Binding type
 }
 ```
 

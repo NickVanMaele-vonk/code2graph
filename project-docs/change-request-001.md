@@ -98,12 +98,19 @@ Data Layer:
 
 ### 1.5 JSX Instance Handling
 
-**Decision**: JSX instances are **metadata on component definitions**, not separate nodes.
+**Decision**: JSX component usage instances are **metadata on component definitions**, not separate nodes. Only HTML elements become JSX nodes.
 
 **Rationale**:
-- JSX usage (`<MainComponent name="..." />`) indicates WHERE a component is rendered
-- Creating separate nodes creates duplication and confusion
-- Users care about entry points to UI (render locations), not JSX syntax details
+- **Component JSX usage** (`<MainComponent />`, `<Hello />`) is syntax for invoking a component, not a logical step in data flow
+- Creating separate nodes for component usage creates duplication and confusion
+- **HTML elements** (`<button>`, `<input>`, `<div>`) represent actual UI interaction/display points in data flow
+- Users care about data flow and logical steps, not JSX syntax details
+
+**Node Creation Policy**:
+- ✅ **HTML elements** → Create JSX element nodes (they are UI interaction points)
+- ❌ **Component usage** (local or imported) → No JSX node, create direct "renders" edge instead
+- ✅ **Component definitions** → Always create component nodes
+- ✅ **Render locations** → Store as metadata on component definitions
 
 **Implementation**: Store as `renderLocations` array on ComponentInfo:
 ```typescript
@@ -266,34 +273,36 @@ System creates separate nodes for:
 2. JSX element usages (from JSX parsing)
 
 **Solution**: Store JSX instances as metadata, not separate nodes
-1. When creating JSX element nodes, check if element name matches a local component definition
+1. When creating JSX element nodes, check if element name matches a component definition (local or imported)
 2. If yes, don't create a separate JSX element node
 3. Instead, add renderLocation metadata to the component definition
 4. Only create JSX element nodes for:
-   - HTML elements (div, button, h1, etc.)
-   - Component usages from external/imported components
+   - HTML elements (div, button, input, h1, p, etc.) - these represent UI interaction/display points in the data flow
+   - NOT for component usages (whether local or imported) - these create direct "renders" edges instead
+
+**Rationale**: Component JSX usage (`<Hello />`) is syntax for invoking a component, not a logical step in data flow. HTML elements represent actual UI interaction points where users provide input or see output. Creating nodes for component JSX usage adds syntactic noise without logical value.
 
 **Implementation:**
 ```typescript
 // In createNodesFromComponents or similar
 for (const jsxElement of jsxElements) {
-  const isLocalComponent = componentDefinitions.find(comp => 
-    comp.name === jsxElement.name && 
-    comp.file === jsxElement.file
+  const isComponentUsage = componentDefinitions.find(comp => 
+    comp.name === jsxElement.name
+    // Check both local and imported components
   );
   
-  if (isLocalComponent) {
-    // Don't create node, add to renderLocations metadata
-    if (!isLocalComponent.renderLocations) {
-      isLocalComponent.renderLocations = [];
+  if (isComponentUsage) {
+    // Don't create node for component usage, add to renderLocations metadata
+    if (!isComponentUsage.renderLocations) {
+      isComponentUsage.renderLocations = [];
     }
-    isLocalComponent.renderLocations.push({
+    isComponentUsage.renderLocations.push({
       file: jsxElement.file,
       line: jsxElement.line,
       context: "JSX usage"
     });
   } else {
-    // Create JSX element node (HTML or external component usage)
+    // Create JSX element node for HTML elements only (button, div, input, etc.)
     nodes.push(createJSXElementNode(jsxElement));
   }
 }
@@ -322,6 +331,31 @@ for (const jsxElement of jsxElements) {
     // ... existing properties
     codeOwnership: CodeOwnership;
     isInfrastructure?: boolean;
+  }
+  ```
+
+- [ ] Add `EventHandler` interface for structured event handler information:
+  ```typescript
+  export interface EventHandler {
+    name: string;        // Event name: "onClick", "onChange", "onSubmit"
+    type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
+    handler: string;     // Function(s) called: "handleClick" or "validateInput, callAPI"
+  }
+  ```
+
+- [ ] Update `InformativeElementInfo` to include parent component and use EventHandler[]:
+  ```typescript
+  export interface InformativeElementInfo {
+    type: 'display' | 'input' | 'data-source' | 'state-management';
+    name: string;
+    elementType: string;
+    props: Record<string, unknown>;
+    eventHandlers: EventHandler[];  // UPDATED: Full EventHandler objects, not just strings
+    dataBindings: string[];
+    line?: number;
+    column?: number;
+    file: string;
+    parentComponent?: string; // NEW: Name of the component that contains this element
   }
   ```
 
@@ -414,7 +448,134 @@ for (const jsxElement of jsxElements) {
   }
   ```
 
-**B2. Update Tests** (`test/ast-parser.test.js`)
+**B2. Add Parent Component Tracking** (`src/analyzers/ast-parser.ts`)
+
+- [ ] Update `extractInformativeElements()` to track component context:
+  ```typescript
+  extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[] {
+    const informativeElements: InformativeElementInfo[] = [];
+    let currentComponentName: string | undefined;
+    
+    // Use AST traversal with scope tracking to determine parent component
+    const visitor: Visitor = {
+      // Track when we enter a component definition
+      FunctionDeclaration: (path) => {
+        const funcName = path.node.id?.name;
+        if (funcName && this.isComponentName(funcName) && this.functionReturnsJSX(path.node)) {
+          currentComponentName = funcName;
+        }
+      },
+      
+      // Track arrow function components
+      VariableDeclarator: (path) => {
+        const varName = t.isIdentifier(path.node.id) ? path.node.id.name : undefined;
+        if (varName && this.isComponentName(varName)) {
+          const init = path.node.init;
+          if ((t.isArrowFunctionExpression(init) || t.isFunctionExpression(init)) && 
+              this.functionReturnsJSX(init)) {
+            currentComponentName = varName;
+          }
+        }
+      },
+      
+      // Track class components
+      ClassDeclaration: (path) => {
+        const className = path.node.id?.name;
+        if (className && this.isComponentName(className)) {
+          const superClass = path.node.superClass;
+          if (superClass && this.isReactComponent(this.getSuperClassName(superClass))) {
+            currentComponentName = className;
+          }
+        }
+      },
+      
+      // Detect JSX elements and assign parent component
+      JSXElement: (path) => {
+        // Check if this is a display element
+        if (this.hasDataBinding(path.node)) {
+          const elementInfo: InformativeElementInfo = {
+            type: 'display',
+            name: this.getJSXElementName(path.node),
+            elementType: 'JSXElement',
+            props: this.extractJSXProps(path.node),
+            eventHandlers: this.extractEventHandlers(path.node),
+            dataBindings: this.extractDataBindings(path.node),
+            line: path.node.loc?.start.line,
+            column: path.node.loc?.start.column,
+            file: filePath,
+            parentComponent: currentComponentName // Assign parent from traversal context
+          };
+          informativeElements.push(elementInfo);
+        }
+        
+        // Check if this is an input element
+        if (this.hasEventHandlers(path.node)) {
+          const elementInfo: InformativeElementInfo = {
+            type: 'input',
+            name: this.getJSXElementName(path.node),
+            elementType: 'JSXElement',
+            props: this.extractJSXProps(path.node),
+            eventHandlers: this.extractEventHandlers(path.node),
+            dataBindings: [],
+            line: path.node.loc?.start.line,
+            column: path.node.loc?.start.column,
+            file: filePath,
+            parentComponent: currentComponentName // Assign parent from traversal context
+          };
+          informativeElements.push(elementInfo);
+        }
+      }
+    };
+    
+    traverseFunction(ast as t.Node, visitor);
+    
+    return informativeElements;
+  }
+  ```
+
+- [ ] Add helper method to get superclass name:
+  ```typescript
+  private getSuperClassName(superClass: t.Expression): string {
+    if (t.isMemberExpression(superClass)) {
+      if (t.isIdentifier(superClass.object) && t.isIdentifier(superClass.property)) {
+        return `${superClass.object.name}.${superClass.property.name}`;
+      }
+    } else if (t.isIdentifier(superClass)) {
+      return superClass.name;
+    }
+    return '';
+  }
+  ```
+
+- [ ] Update `detectDisplayElements()` and other detection methods to preserve parent component context during nested traversals
+
+**B3. Update Tests** (`test/ast-parser.test.js`)
+
+- [ ] Add test for parent component tracking:
+  ```javascript
+  it('should track parent component for JSX elements', async () => {
+    const testFile = path.join(tempDir, 'multicomponent.tsx');
+    const content = `
+      function ParentComponent() {
+        return <button onClick={handleClick}>Click</button>;
+      }
+      
+      function SiblingComponent() {
+        return <input type="text" onChange={handleChange} />;
+      }
+    `;
+    await fs.writeFile(testFile, content);
+    
+    const ast = await parser.parseFile(testFile);
+    const elements = parser.extractInformativeElements(ast, testFile);
+    
+    const buttonElement = elements.find(e => e.name === 'button');
+    const inputElement = elements.find(e => e.name === 'input');
+    
+    assert.strictEqual(buttonElement?.parentComponent, 'ParentComponent');
+    assert.strictEqual(inputElement?.parentComponent, 'SiblingComponent');
+  });
+  ```
 
 - [ ] Add test for webpack.config.js exclusion:
   ```javascript
@@ -729,7 +890,7 @@ for (const jsxElement of jsxElements) {
 
 **E1. Create Contains Edges Method** (`src/analyzers/dependency-analyser.ts`)
 
-- [ ] Add `createContainsEdges()` method:
+- [ ] Add `createContainsEdges()` method using parentComponent tracking:
   ```typescript
   private createContainsEdges(allNodes: NodeInfo[]): EdgeInfo[] {
     const edges: EdgeInfo[] = [];
@@ -749,13 +910,15 @@ for (const jsxElement of jsxElements) {
       !this.isJSXComponentUsage(node)
     );
     
-    // Create edges from components to their JSX children
+    // Create edges from components to their JSX children using parentComponent field
     for (const componentNode of componentNodes) {
-      const jsxChildrenInFile = jsxElementNodes.filter(jsx => 
+      // Find JSX elements that belong to this specific component
+      const jsxChildren = jsxElementNodes.filter(jsx => 
+        jsx.properties.parentComponent === componentNode.label &&
         jsx.file === componentNode.file
       );
       
-      for (const jsxChild of jsxChildrenInFile) {
+      for (const jsxChild of jsxChildren) {
         edges.push({
           id: this.generateEdgeId(),
           source: componentNode.id,
@@ -767,6 +930,14 @@ for (const jsxElement of jsxElements) {
           }
         });
       }
+    }
+    
+    if (this.logger) {
+      this.logger.logInfo('Contains edges created using parentComponent tracking', {
+        totalComponentNodes: componentNodes.length,
+        totalJSXElements: jsxElementNodes.length,
+        containsEdges: edges.length
+      });
     }
     
     return edges;
@@ -812,9 +983,9 @@ for (const jsxElement of jsxElements) {
 
 **E2. Update Tests** (`test/dependency-analyser.test.js`)
 
-- [ ] Add test for contains edges:
+- [ ] Add test for contains edges with parentComponent tracking:
   ```javascript
-  it('should create contains edges from components to JSX elements', () => {
+  it('should create contains edges only for JSX elements with matching parentComponent', () => {
     const nodes = [
       {
         id: 'comp1',
@@ -826,26 +997,108 @@ for (const jsxElement of jsxElements) {
         properties: { type: 'functional' }
       },
       {
+        id: 'comp2',
+        label: 'OtherComponent',
+        nodeType: 'function',
+        nodeCategory: 'front end',
+        file: '/app/component.tsx',
+        codeOwnership: 'internal',
+        properties: { type: 'functional' }
+      },
+      {
         id: 'jsx1',
         label: 'button',
         nodeType: 'function',
         file: '/app/component.tsx',
-        properties: { elementType: 'input' }
+        properties: { 
+          elementType: 'input',
+          parentComponent: 'MyComponent' // Belongs to MyComponent
+        }
       },
       {
         id: 'jsx2',
         label: 'div',
         nodeType: 'function',
         file: '/app/component.tsx',
-        properties: { elementType: 'display' }
+        properties: { 
+          elementType: 'display',
+          parentComponent: 'OtherComponent' // Belongs to OtherComponent
+        }
       }
     ];
     
     const edges = analyzer.createEdges(nodes);
     const containsEdges = edges.filter(e => e.relationship === 'contains');
     
+    // Should have 2 edges: MyComponent→button and OtherComponent→div
     assert.strictEqual(containsEdges.length, 2);
-    assert.ok(containsEdges.every(e => e.source === 'comp1'));
+    
+    // Verify correct parent-child relationships
+    const myComponentEdge = containsEdges.find(e => e.source === 'comp1');
+    const otherComponentEdge = containsEdges.find(e => e.source === 'comp2');
+    
+    assert.ok(myComponentEdge);
+    assert.strictEqual(myComponentEdge.target, 'jsx1'); // MyComponent contains button
+    
+    assert.ok(otherComponentEdge);
+    assert.strictEqual(otherComponentEdge.target, 'jsx2'); // OtherComponent contains div
+  });
+  ```
+
+- [ ] Add test for file with multiple components (no cross-contamination):
+  ```javascript
+  it('should not create contains edges between unrelated components in same file', () => {
+    const nodes = [
+      {
+        id: 'comp1',
+        label: 'ParentComponent',
+        nodeType: 'function',
+        nodeCategory: 'front end',
+        file: '/app/multi.tsx',
+        codeOwnership: 'internal',
+        properties: { type: 'functional' }
+      },
+      {
+        id: 'comp2',
+        label: 'SiblingComponent',
+        nodeType: 'function',
+        nodeCategory: 'front end',
+        file: '/app/multi.tsx',
+        codeOwnership: 'internal',
+        properties: { type: 'functional' }
+      },
+      {
+        id: 'jsx1',
+        label: 'button',
+        nodeType: 'function',
+        file: '/app/multi.tsx',
+        properties: { 
+          elementType: 'input',
+          parentComponent: 'ParentComponent'
+        }
+      },
+      {
+        id: 'jsx2',
+        label: 'input',
+        nodeType: 'function',
+        file: '/app/multi.tsx',
+        properties: { 
+          elementType: 'input',
+          parentComponent: 'SiblingComponent'
+        }
+      }
+    ];
+    
+    const edges = analyzer.createEdges(nodes);
+    const containsEdges = edges.filter(e => e.relationship === 'contains');
+    
+    // Should NOT have ParentComponent→input or SiblingComponent→button
+    const wrongEdges = containsEdges.filter(e => 
+      (e.source === 'comp1' && e.target === 'jsx2') || // ParentComponent→input (WRONG)
+      (e.source === 'comp2' && e.target === 'jsx1')    // SiblingComponent→button (WRONG)
+    );
+    
+    assert.strictEqual(wrongEdges.length, 0, 'Should not create cross-component edges');
   });
   ```
 
@@ -879,17 +1132,16 @@ for (const jsxElement of jsxElements) {
       for (const element of component.informativeElements) {
         const elementName = element.name;
         
-        // Check if this JSX element matches a local component definition
-        const isLocalComponentUsage = components.some(comp => 
-          comp.name === elementName && 
-          comp.file === component.file
+        // Check if this JSX element matches any component definition (local or imported)
+        const isComponentUsage = components.some(comp => 
+          comp.name === elementName
+          // Checks all components, not just same-file
         );
         
-        if (isLocalComponentUsage) {
-          // Don't create node - add to renderLocations metadata
+        if (isComponentUsage) {
+          // Don't create node for component usage - add to renderLocations metadata
           const targetComponent = components.find(comp => 
-            comp.name === elementName && 
-            comp.file === component.file
+            comp.name === elementName
           );
           
           if (targetComponent) {
@@ -903,7 +1155,7 @@ for (const jsxElement of jsxElements) {
             });
           }
         } else {
-          // Create JSX element node (HTML or external component)
+          // Create JSX element node for HTML elements only (button, div, input, etc.)
           nodes.push(this.createInformativeElementNode(element, component.file, liveCodeScores));
         }
       }
@@ -921,15 +1173,27 @@ for (const jsxElement of jsxElements) {
 
 - [ ] Add test to verify no duplicate component nodes:
   ```javascript
-  it('should not create duplicate nodes for local component JSX usage', () => {
+  it('should not create duplicate nodes for component JSX usage (local or imported)', () => {
     const components = [
       {
         name: 'MainComponent',
         type: 'class',
         file: '/app/index.tsx',
         informativeElements: [
-          { name: 'MainComponent', type: 'display' } // Self-reference in JSX
+          { name: 'ChildComponent', type: 'display' } // Component usage
         ],
+        imports: [],
+        exports: [],
+        props: [],
+        state: [],
+        hooks: [],
+        children: []
+      },
+      {
+        name: 'ChildComponent',
+        type: 'functional',
+        file: '/app/child.tsx',
+        informativeElements: [],
         imports: [],
         exports: [],
         props: [],
@@ -940,22 +1204,363 @@ for (const jsxElement of jsxElements) {
     ];
     
     const graph = analyzer.buildDependencyGraph(components);
-    const mainComponentNodes = graph.nodes.filter(n => n.label === 'MainComponent');
+    const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
     
-    assert.strictEqual(mainComponentNodes.length, 1); // Only definition, not JSX instance
+    assert.strictEqual(childComponentNodes.length, 1); // Only definition, not JSX instance
+    
+    // Should have renderLocations metadata instead
+    const childComponent = components.find(c => c.name === 'ChildComponent');
+    assert.ok(childComponent.renderLocations);
+    assert.strictEqual(childComponent.renderLocations.length, 1);
   });
   ```
 
 ---
 
-### Phase G: Integration & Testing
+### Phase G: Event Handler Analysis & Edge Creation
 
-**G1. Run Full Test Suite**
+**G1. Implement Event Handler Function Extraction** (`src/analyzers/ast-parser.ts`)
+
+- [ ] Update `extractEventHandlers()` to extract full event handler information:
+  ```typescript
+  private extractEventHandlers(node: t.JSXElement): EventHandler[] {
+    const handlers: EventHandler[] = [];
+    
+    node.openingElement.attributes?.forEach((attr) => {
+      if (t.isJSXAttribute(attr) && 
+          t.isJSXIdentifier(attr.name) && 
+          attr.name.name.match(/^on[A-Z]/)) {
+        
+        const eventName = attr.name.name;
+        let handlerInfo: EventHandler;
+        
+        // Case 1: Direct function reference - onClick={handleClick}
+        if (t.isJSXExpressionContainer(attr.value) && 
+            t.isIdentifier(attr.value.expression)) {
+          handlerInfo = {
+            name: eventName,
+            type: 'function-reference',
+            handler: attr.value.expression.name
+          };
+        }
+        // Case 2: Arrow function - onClick={() => doSomething()}
+        else if (t.isJSXExpressionContainer(attr.value) && 
+                 t.isArrowFunctionExpression(attr.value.expression)) {
+          const functionCalls = this.extractFunctionCallsFromArrowFunction(
+            attr.value.expression
+          );
+          handlerInfo = {
+            name: eventName,
+            type: 'arrow-function',
+            handler: functionCalls.join(', ')
+          };
+        }
+        // Case 3: Inline function expression - onClick={function() {...}}
+        else if (t.isJSXExpressionContainer(attr.value) && 
+                 t.isFunctionExpression(attr.value.expression)) {
+          const functionCalls = this.extractFunctionCallsFromFunction(
+            attr.value.expression
+          );
+          handlerInfo = {
+            name: eventName,
+            type: 'function-expression',
+            handler: functionCalls.join(', ')
+          };
+        }
+        else {
+          handlerInfo = {
+            name: eventName,
+            type: 'unknown',
+            handler: 'unknown'
+          };
+        }
+        
+        handlers.push(handlerInfo);
+      }
+    });
+
+    return handlers;
+  }
+  ```
+
+- [ ] Add helper method to extract function calls from arrow functions:
+  ```typescript
+  private extractFunctionCallsFromArrowFunction(
+    arrowFunc: t.ArrowFunctionExpression
+  ): string[] {
+    const calls: string[] = [];
+    
+    // Traverse arrow function body to find CallExpressions
+    const visitor: Visitor = {
+      CallExpression: (path) => {
+        const callName = this.getCallExpressionName(path.node);
+        if (callName && callName !== 'unknown') {
+          calls.push(callName);
+        }
+      }
+    };
+    
+    traverseFunction(arrowFunc.body as t.Node, visitor);
+    
+    return calls;
+  }
+  ```
+
+- [ ] Add helper method to extract function calls from function expressions:
+  ```typescript
+  private extractFunctionCallsFromFunction(
+    func: t.FunctionExpression
+  ): string[] {
+    const calls: string[] = [];
+    
+    const visitor: Visitor = {
+      CallExpression: (path) => {
+        const callName = this.getCallExpressionName(path.node);
+        if (callName && callName !== 'unknown') {
+          calls.push(callName);
+        }
+      }
+    };
+    
+    traverseFunction(func.body as t.Node, visitor);
+    
+    return calls;
+  }
+  ```
+
+- [ ] Update `InformativeElementInfo` extraction to use full `EventHandler` objects:
+  ```typescript
+  // In detectInputElements()
+  const elementInfo: InformativeElementInfo = {
+    type: 'input',
+    name: this.getJSXElementName(path.node),
+    elementType: 'JSXElement',
+    props: this.extractJSXProps(path.node),
+    eventHandlers: this.extractEventHandlers(path.node), // Now returns EventHandler[]
+    dataBindings: [],
+    line: path.node.loc?.start.line,
+    column: path.node.loc?.start.column,
+    file: ''
+  };
+  ```
+
+**G2. Create Event Handler Edges** (`src/analyzers/dependency-analyser.ts`)
+
+- [ ] Add `createEventHandlerEdges()` method:
+  ```typescript
+  private createEventHandlerEdges(allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Get JSX element nodes (buttons, inputs with event handlers)
+    const jsxElementNodes = allNodes.filter(node => 
+      node.properties.elementType !== undefined &&
+      node.properties.eventHandlers &&
+      Array.isArray(node.properties.eventHandlers) &&
+      node.properties.eventHandlers.length > 0
+    );
+    
+    // Get all function nodes (component methods, standalone functions)
+    const functionNodes = allNodes.filter(node => 
+      node.nodeType === 'function' &&
+      !node.properties.elementType // Not a JSX element
+    );
+    
+    // Get all API nodes
+    const apiNodes = allNodes.filter(node => 
+      node.nodeType === 'API'
+    );
+    
+    for (const jsxNode of jsxElementNodes) {
+      const eventHandlers = jsxNode.properties.eventHandlers as Array<{
+        name: string;
+        type: string;
+        handler: string;
+      }>;
+      
+      for (const eventHandler of eventHandlers) {
+        // Parse handler string - may contain multiple function calls
+        const handlerFunctions = eventHandler.handler.split(',').map(h => h.trim());
+        
+        for (const handlerFunction of handlerFunctions) {
+          // Try to find matching function node
+          const targetNode = functionNodes.find(fn => 
+            fn.label === handlerFunction
+          ) || apiNodes.find(api => 
+            api.label.includes(handlerFunction)
+          );
+          
+          if (targetNode) {
+            edges.push({
+              id: this.generateEdgeId(),
+              source: jsxNode.id,
+              target: targetNode.id,
+              relationship: 'calls',
+              properties: {
+                eventType: eventHandler.name,
+                handlerType: eventHandler.type,
+                triggerMechanism: 'user-interaction'
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    return edges;
+  }
+  ```
+
+- [ ] Update `createEdges()` to call new method:
+  ```typescript
+  createEdges(nodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    try {
+      // ... existing edge creation ...
+      
+      // Create "contains" edges (component → JSX element)
+      const containsEdges = this.createContainsEdges(nodes);
+      edges.push(...containsEdges);
+      
+      // NEW: Create event handler edges (JSX element → function/API)
+      const eventHandlerEdges = this.createEventHandlerEdges(nodes);
+      edges.push(...eventHandlerEdges);
+      
+      // Remove duplicate edges
+      const uniqueEdges = this.removeDuplicateEdges(edges);
+      
+      if (this.logger) {
+        this.logger.logInfo('Edge creation completed', {
+          totalEdges: uniqueEdges.length,
+          importEdges: uniqueEdges.filter(e => e.relationship === 'imports').length,
+          callEdges: uniqueEdges.filter(e => e.relationship === 'calls').length,
+          rendersEdges: uniqueEdges.filter(e => e.relationship === 'renders').length,
+          containsEdges: uniqueEdges.filter(e => e.relationship === 'contains').length,
+          eventHandlerEdges: eventHandlerEdges.length,
+          dataEdges: uniqueEdges.filter(e => e.relationship === 'reads' || e.relationship === 'writes to').length
+        });
+      }
+      
+      return uniqueEdges;
+    } catch (error) {
+      // ... error handling ...
+    }
+  }
+  ```
+
+**G3. Verify Type Definitions** (`src/types/index.ts`)
+
+- [ ] Verify `EventHandler` interface was added correctly in Phase A
+- [ ] Verify `InformativeElementInfo` uses `EventHandler[]` (updated in Phase A)
+- [ ] Confirm no TypeScript compilation errors after type changes
+
+**G4. Update Tests** (`test/ast-parser.test.js`, `test/dependency-analyser.test.js`)
+
+- [ ] Add test for event handler extraction with function reference:
+  ```javascript
+  it('should extract event handler with function reference', async () => {
+    const testFile = path.join(tempDir, 'button.tsx');
+    const content = `
+      function MyComponent() {
+        const handleClick = () => console.log('clicked');
+        return <button onClick={handleClick}>Click</button>;
+      }
+    `;
+    await fs.writeFile(testFile, content);
+    
+    const ast = await parser.parseFile(testFile);
+    const elements = parser.extractInformativeElements(ast, testFile);
+    
+    assert.strictEqual(elements.length, 1);
+    assert.strictEqual(elements[0].type, 'input');
+    assert.strictEqual(elements[0].eventHandlers.length, 1);
+    assert.strictEqual(elements[0].eventHandlers[0].name, 'onClick');
+    assert.strictEqual(elements[0].eventHandlers[0].handler, 'handleClick');
+  });
+  ```
+
+- [ ] Add test for event handler extraction with arrow function:
+  ```javascript
+  it('should extract event handler with arrow function and multiple calls', async () => {
+    const testFile = path.join(tempDir, 'button.tsx');
+    const content = `
+      function MyComponent() {
+        return (
+          <button onClick={() => {
+            validateInput();
+            callAPI('/endpoint');
+            updateState();
+          }}>
+            Submit
+          </button>
+        );
+      }
+    `;
+    await fs.writeFile(testFile, content);
+    
+    const ast = await parser.parseFile(testFile);
+    const elements = parser.extractInformativeElements(ast, testFile);
+    
+    assert.strictEqual(elements[0].eventHandlers[0].type, 'arrow-function');
+    assert.ok(elements[0].eventHandlers[0].handler.includes('validateInput'));
+    assert.ok(elements[0].eventHandlers[0].handler.includes('callAPI'));
+    assert.ok(elements[0].eventHandlers[0].handler.includes('updateState'));
+  });
+  ```
+
+- [ ] Add test for event handler edge creation:
+  ```javascript
+  it('should create edges from JSX elements to event handler functions', () => {
+    const nodes = [
+      {
+        id: 'jsx1',
+        label: 'button',
+        nodeType: 'function',
+        file: '/app/component.tsx',
+        properties: {
+          elementType: 'input',
+          eventHandlers: [
+            { name: 'onClick', type: 'function-reference', handler: 'handleClick' }
+          ]
+        }
+      },
+      {
+        id: 'func1',
+        label: 'handleClick',
+        nodeType: 'function',
+        nodeCategory: 'front end',
+        file: '/app/component.tsx',
+        properties: { type: 'functional' }
+      }
+    ];
+    
+    const edges = analyzer.createEdges(nodes);
+    const eventEdges = edges.filter(e => 
+      e.source === 'jsx1' && 
+      e.target === 'func1' &&
+      e.relationship === 'calls'
+    );
+    
+    assert.strictEqual(eventEdges.length, 1);
+    assert.strictEqual(eventEdges[0].properties.eventType, 'onClick');
+  });
+  ```
+
+**G5. Update Documentation**
+
+- [ ] Add examples to README showing event handler tracking
+- [ ] Document edge flow: User → Button → Event Handler → Function → API → Database
+
+---
+
+### Phase H: Integration & Testing
+
+**H1. Run Full Test Suite**
 
 - [ ] Run `npm test` to ensure all unit tests pass
 - [ ] Verify no test regressions
 
-**G2. Run Analysis on Test Repository**
+**H2. Run Analysis on Test Repository**
 
 - [ ] Re-analyze react-typescript-helloworld:
   ```bash
@@ -975,15 +1580,15 @@ for (const jsxElement of jsxElements) {
   - [ ] All nodes have `codeOwnership` property
   - [ ] External nodes have `isInfrastructure: true`
 
-**G3. Validate Node Counts**
+**H3. Validate Node Counts**
 
 Expected output for react-typescript-helloworld:
 - **Nodes**: ~9-10 (down from 13)
   - 2 component nodes (Hello, MainComponent)
   - 2 external dependency nodes (react, react-dom)
-  - 4-5 JSX element nodes (h1, button, p, etc.)
+  - 4-5 JSX element nodes for HTML elements only (h1, button, p, etc.)
   - 0 import nodes (replaced by external dependencies)
-  - 0 duplicate component JSX instances
+  - 0 JSX nodes for component usage (replaced by direct "renders" edges and renderLocations metadata)
   
 - **Edges**: ~10-12 (up from 2)
   - 2 imports edges (Hello→react, MainComponent→react/react-dom)
@@ -991,7 +1596,7 @@ Expected output for react-typescript-helloworld:
   - 5-7 contains edges (components→JSX elements)
   - 0 self-referencing edges
 
-**G4. Document Results**
+**H4. Document Results**
 
 - [ ] Update analysis log with new output format
 - [ ] Create comparison document showing before/after node/edge counts
@@ -1027,11 +1632,16 @@ Expected output for react-typescript-helloworld:
 ✅ webpack.config.js not detected as component  
 ✅ One node per external package (not per import)  
 ✅ Same-file component usage creates "renders" edges  
-✅ "contains" edges from components to JSX elements  
+✅ "contains" edges from components to JSX elements using parentComponent tracking  
+✅ Parent component correctly tracked for JSX elements (no file-level fallback)  
+✅ Multiple components in same file have accurate JSX element ownership  
 ✅ No duplicate component nodes (definition only, no JSX instance nodes)  
 ✅ All nodes have `codeOwnership` property  
 ✅ External dependencies flagged with `isInfrastructure: true`  
 ✅ No self-referencing edges  
+✅ Event handler function extraction working (function references, arrow functions, inline functions)  
+✅ Event handler edges created from JSX elements to handler functions  
+✅ Support for multiple function calls per event handler  
 
 ### Output Quality
 ✅ Reduced node count (fewer redundant nodes)  
