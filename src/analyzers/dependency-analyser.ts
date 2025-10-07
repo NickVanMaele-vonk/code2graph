@@ -754,9 +754,24 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    */
   /**
    * Phase C: Creates nodes from components with consolidated external dependencies
-   * - Component nodes (internal code) created for each component
-   * - Informative element nodes (JSX elements) created for each element
+   * Phase F: Prevents duplicate component nodes by storing JSX usage as metadata
+   * 
+   * Node Creation Rules:
+   * - Component nodes (internal code) created for each component definition
+   * - HTML element nodes (button, div, input) created for JSX elements
+   * - Component usage nodes NOT created - stored as renderLocations metadata
    * - External package nodes consolidated (one per package, not per import)
+   * 
+   * Phase F Business Logic:
+   * - If JSX element name is capitalized (e.g., <MainComponent />) → Component usage
+   *   - Don't create node, add to target component's renderLocations
+   * - If JSX element name is lowercase (e.g., <button>, <div>) → HTML element
+   *   - Create node as before
+   * 
+   * Example: File has MainComponent and <MainComponent /> usage
+   *   Before Phase F: 2 nodes (definition + JSX instance) → duplication
+   *   After Phase F: 1 node (definition only) + renderLocations metadata
+   * 
    * @param components - Array of components to analyze
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo[] - Array of created nodes
@@ -769,10 +784,43 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       const componentNode = this.createComponentNode(component, liveCodeScores);
       nodes.push(componentNode);
 
-      // Create nodes for informative elements (JSX elements)
+      // Phase F: Create nodes only for HTML elements, not component usages
       for (const element of component.informativeElements) {
-        const elementNode = this.createElementNode(element, component.file, liveCodeScores);
-        nodes.push(elementNode);
+        // Check if this element is a component usage (capitalized name)
+        const isComponentUsage = this.isElementNameComponentUsage(element.name);
+        
+        if (isComponentUsage) {
+          // Phase F: Don't create node for component usage
+          // Instead, add to renderLocations metadata on the target component
+          const targetComponent = components.find(comp => comp.name === element.name);
+          
+          if (targetComponent) {
+            // Initialize renderLocations if not exists
+            if (!targetComponent.renderLocations) {
+              targetComponent.renderLocations = [];
+            }
+            
+            // Add usage location as metadata
+            targetComponent.renderLocations.push({
+              file: component.file,
+              line: element.line || 0,
+              context: `Used in ${component.name}`
+            });
+            
+            if (this.logger) {
+              this.logger.logInfo('Phase F: Component usage stored as metadata', {
+                component: element.name,
+                usedIn: component.name,
+                file: component.file
+              });
+            }
+          }
+          // Skip node creation for component usage
+        } else {
+          // Create node for HTML element (button, div, input, etc.)
+          const elementNode = this.createElementNode(element, component.file, liveCodeScores);
+          nodes.push(elementNode);
+        }
       }
     }
 
@@ -1141,6 +1189,32 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const firstChar = node.label.charAt(0);
     const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
 
+    return isCapitalized;
+  }
+
+  /**
+   * Phase F: Checks if an element name represents a component usage (not an HTML element)
+   * Used during node creation to distinguish between:
+   *   - Component usage: <MainComponent />, <Hello /> → Don't create node
+   *   - HTML element: <button>, <div>, <input> → Create node
+   * 
+   * React Naming Convention:
+   *   - Components: PascalCase (first letter uppercase)
+   *   - HTML elements: lowercase
+   * 
+   * @param elementName - Name of the element to check
+   * @returns boolean - True if component usage (capitalized), false if HTML element (lowercase)
+   */
+  private isElementNameComponentUsage(elementName: string): boolean {
+    if (!elementName || elementName.length === 0) {
+      return false;
+    }
+    
+    // Check if first character is uppercase
+    // React enforces: Component names MUST start with uppercase letter
+    const firstChar = elementName.charAt(0);
+    const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
+    
     return isCapitalized;
   }
 

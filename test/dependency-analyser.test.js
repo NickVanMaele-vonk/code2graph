@@ -859,6 +859,241 @@ describe('Dependency Analyzer', () => {
       assert.strictEqual(correctEdges.length, 2, 'Should create correct parent-child edges only');
     });
 
+    // Phase F tests: JSX Instance Metadata (No Duplicate Nodes)
+    it('should not create duplicate nodes for component JSX usage (local)', () => {
+      const components = [
+        {
+          name: 'MainComponent',
+          type: 'class',
+          file: '/app/index.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'ChildComponent', 
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 15,
+              file: '/app/index.tsx'
+            } // Component usage (capitalized)
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
+
+      // Phase F: Should only have 1 node (definition), not 2 (definition + JSX instance)
+      assert.strictEqual(childComponentNodes.length, 1, 'Should only have component definition node, not JSX instance node');
+      
+      // Verify it's a component node, not a JSX element node
+      const childNode = childComponentNodes[0];
+      assert.ok(childNode.properties.type, 'Should have component type property');
+      assert.ok(!childNode.properties.elementType, 'Should not have elementType (not a JSX element node)');
+    });
+
+    it('should populate renderLocations metadata for component JSX usage', () => {
+      const components = [
+        {
+          name: 'MainComponent',
+          type: 'class',
+          file: '/app/index.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'ChildComponent', 
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 15,
+              file: '/app/index.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      // Call buildDependencyGraph to trigger renderLocations population
+      // We don't need the returned graph, just the side effect of populating metadata
+      analyzer.buildDependencyGraph(components);
+
+      // Phase F: ChildComponent should have renderLocations metadata
+      const childComponent = components.find(c => c.name === 'ChildComponent');
+      assert.ok(childComponent.renderLocations, 'Should have renderLocations array');
+      assert.strictEqual(childComponent.renderLocations.length, 1, 'Should have one render location');
+      
+      const renderLocation = childComponent.renderLocations[0];
+      assert.strictEqual(renderLocation.file, '/app/index.tsx', 'Should record correct usage file');
+      assert.strictEqual(renderLocation.line, 15, 'Should record correct line number');
+      assert.ok(renderLocation.context.includes('MainComponent'), 'Should record parent component name in context');
+    });
+
+    it('should create nodes for HTML elements (lowercase names)', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'button', // HTML element (lowercase)
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx'
+            },
+            { 
+              name: 'div', // HTML element (lowercase)
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: ['data'],
+              line: 8,
+              file: '/app/component.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // Phase F: HTML elements should create nodes (lowercase names)
+      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      const divNode = graph.nodes.find(n => n.label === 'div');
+      
+      assert.ok(buttonNode, 'Should create node for button (HTML element)');
+      assert.ok(divNode, 'Should create node for div (HTML element)');
+      
+      // Verify they have elementType (JSX element nodes)
+      assert.ok(buttonNode.properties.elementType, 'Button should have elementType');
+      assert.ok(divNode.properties.elementType, 'Div should have elementType');
+    });
+
+    it('should handle mixed HTML elements and component usage in same file', () => {
+      const components = [
+        {
+          name: 'ParentComponent',
+          type: 'functional',
+          file: '/app/parent.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'button', // HTML element → create node
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/parent.tsx'
+            },
+            { 
+              name: 'ChildComponent', // Component usage → metadata only
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 12,
+              file: '/app/parent.tsx'
+            },
+            { 
+              name: 'div', // HTML element → create node
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: ['text'],
+              line: 15,
+              file: '/app/parent.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // HTML elements should create nodes
+      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      const divNode = graph.nodes.find(n => n.label === 'div');
+      assert.ok(buttonNode, 'Should create node for button');
+      assert.ok(divNode, 'Should create node for div');
+      
+      // Component usage should NOT create duplicate node
+      const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
+      assert.strictEqual(childComponentNodes.length, 1, 'Should only have one ChildComponent node (definition only)');
+      
+      // ChildComponent should have renderLocations metadata
+      const childComponent = components.find(c => c.name === 'ChildComponent');
+      assert.ok(childComponent.renderLocations, 'ChildComponent should have renderLocations');
+      assert.strictEqual(childComponent.renderLocations.length, 1, 'Should record one usage location');
+      assert.strictEqual(childComponent.renderLocations[0].file, '/app/parent.tsx', 'Should record correct usage file');
+    });
+
     // Phase C tests: External dependency consolidation
     it('should consolidate multiple imports from same external package', () => {
       const components = [
