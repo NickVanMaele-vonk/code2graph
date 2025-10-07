@@ -359,6 +359,12 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       const jsxUsageEdges = this.createJSXUsageEdges(nodes);
       edges.push(...jsxUsageEdges);
 
+      // Phase E: Create "contains" edges (component contains JSX elements)
+      // This detects which HTML elements (button, div, input) belong to which component
+      // Example: MyComponent with <button onClick={...}> creates MyComponent --contains--> button
+      const containsEdges = this.createContainsEdges(nodes);
+      edges.push(...containsEdges);
+
       // Remove duplicate edges
       const uniqueEdges = this.removeDuplicateEdges(edges);
 
@@ -368,6 +374,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
           importEdges: uniqueEdges.filter(e => e.relationship === 'imports').length,
           callEdges: uniqueEdges.filter(e => e.relationship === 'calls').length,
           rendersEdges: uniqueEdges.filter(e => e.relationship === 'renders').length,
+          containsEdges: uniqueEdges.filter(e => e.relationship === 'contains').length,
           dataEdges: uniqueEdges.filter(e => e.relationship === 'reads' || e.relationship === 'writes to').length
         });
       }
@@ -1135,6 +1142,79 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
 
     return isCapitalized;
+  }
+
+  /**
+   * Phase E: Creates "contains" edges from components to their JSX elements
+   * Uses parentComponent field (added in Phase B) for accurate component-to-element mapping
+   * 
+   * Business Logic:
+   * - Only creates edges for HTML elements (button, div, input), not component usage
+   * - Uses parentComponent field to match elements to their owning component
+   * - Prevents cross-component contamination in files with multiple components
+   * 
+   * Example: If MyComponent contains <button onClick={...}>, creates edge:
+   *   MyComponent --contains--> button (JSX element node)
+   * 
+   * This is crucial for understanding UI structure and data flow:
+   * - Which components have user input elements (buttons, forms)
+   * - Which components display data (divs, spans with data bindings)
+   * - Complete UI hierarchy from component to actual DOM elements
+   * 
+   * @param allNodes - All available nodes in the graph
+   * @returns EdgeInfo[] - Array of "contains" edges
+   */
+  private createContainsEdges(allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Get component nodes (internal custom code only)
+    const componentNodes = allNodes.filter(node => 
+      node.properties.type !== undefined && 
+      node.nodeType === 'function' &&
+      node.nodeCategory === 'front end' &&
+      !node.properties.elementType && // Not a JSX element, but a component definition
+      node.codeOwnership === 'internal' // Only custom components, not external
+    );
+    
+    // Get JSX element nodes (HTML elements only, not component usage)
+    const jsxElementNodes = allNodes.filter(node => 
+      node.properties.elementType !== undefined &&
+      !this.isJSXComponentUsage(node) // Exclude component usage (e.g., <MyComponent />)
+    );
+    
+    // Phase E: Create edges from components to their JSX children using parentComponent field
+    for (const componentNode of componentNodes) {
+      // Find JSX elements that belong to this specific component
+      // Phase B added parentComponent field for precise tracking
+      const jsxChildren = jsxElementNodes.filter(jsx => 
+        jsx.properties.parentComponent === componentNode.label &&
+        jsx.file === componentNode.file // Must be in same file
+      );
+      
+      for (const jsxChild of jsxChildren) {
+        edges.push({
+          id: this.generateEdgeId(),
+          source: componentNode.id,
+          target: jsxChild.id,
+          relationship: 'contains',
+          properties: {
+            elementType: jsxChild.properties.elementType,
+            elementName: jsxChild.label,
+            parentComponent: componentNode.label
+          }
+        });
+      }
+    }
+    
+    if (this.logger) {
+      this.logger.logInfo('Contains edges created using parentComponent tracking', {
+        totalComponentNodes: componentNodes.length,
+        totalJSXElements: jsxElementNodes.length,
+        containsEdges: edges.length
+      });
+    }
+    
+    return edges;
   }
 
   /**

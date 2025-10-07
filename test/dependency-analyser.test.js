@@ -691,6 +691,174 @@ describe('Dependency Analyzer', () => {
       assert.strictEqual(renderEdges.length, 0, 'Should not create self-referencing render edges');
     });
 
+    // Phase E tests: Component → JSX Element "Contains" Edges
+    it('should create contains edges only for JSX elements with matching parentComponent', () => {
+      const nodes = [
+        {
+          id: 'comp1',
+          label: 'MyComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'comp2',
+          label: 'OtherComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'jsx1',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'MyComponent' // Belongs to MyComponent
+          }
+        },
+        {
+          id: 'jsx2',
+          label: 'div',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'display',
+            parentComponent: 'OtherComponent' // Belongs to OtherComponent
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const containsEdges = edges.filter(e => e.relationship === 'contains');
+
+      // Phase E: Should have 2 edges: MyComponent→button and OtherComponent→div
+      assert.strictEqual(containsEdges.length, 2, 'Should create two contains edges');
+
+      // Verify correct parent-child relationships
+      const myComponentEdge = containsEdges.find(e => e.source === 'comp1');
+      const otherComponentEdge = containsEdges.find(e => e.source === 'comp2');
+
+      assert.ok(myComponentEdge, 'MyComponent should have a contains edge');
+      assert.strictEqual(myComponentEdge.target, 'jsx1', 'MyComponent should contain button');
+      assert.strictEqual(myComponentEdge.properties.parentComponent, 'MyComponent');
+
+      assert.ok(otherComponentEdge, 'OtherComponent should have a contains edge');
+      assert.strictEqual(otherComponentEdge.target, 'jsx2', 'OtherComponent should contain div');
+      assert.strictEqual(otherComponentEdge.properties.parentComponent, 'OtherComponent');
+    });
+
+    it('should not create contains edges between unrelated components in same file', () => {
+      const nodes = [
+        {
+          id: 'comp1',
+          label: 'ParentComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'comp2',
+          label: 'SiblingComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'jsx1',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'ParentComponent'
+          }
+        },
+        {
+          id: 'jsx2',
+          label: 'input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'SiblingComponent'
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const containsEdges = edges.filter(e => e.relationship === 'contains');
+
+      // Phase E: Should NOT have ParentComponent→input or SiblingComponent→button
+      const wrongEdges = containsEdges.filter(e => 
+        (e.source === 'comp1' && e.target === 'jsx2') || // ParentComponent→input (WRONG)
+        (e.source === 'comp2' && e.target === 'jsx1')    // SiblingComponent→button (WRONG)
+      );
+
+      assert.strictEqual(wrongEdges.length, 0, 'Should not create cross-component edges');
+      
+      // Verify correct edges exist
+      const correctEdges = containsEdges.filter(e => 
+        (e.source === 'comp1' && e.target === 'jsx1') || // ParentComponent→button (CORRECT)
+        (e.source === 'comp2' && e.target === 'jsx2')    // SiblingComponent→input (CORRECT)
+      );
+      
+      assert.strictEqual(correctEdges.length, 2, 'Should create correct parent-child edges only');
+    });
+
     // Phase C tests: External dependency consolidation
     it('should consolidate multiple imports from same external package', () => {
       const components = [
