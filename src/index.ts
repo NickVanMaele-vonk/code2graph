@@ -285,40 +285,76 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
         const exports = this.astParser.extractExports(ast);
         const jsxElements = this.astParser.extractJSXElements(ast);
         const informativeElements = this.astParser.extractInformativeElements(ast, file.path);
+        
+        // Phase 1: Extract individual component definitions from the file
+        const componentDefinitions = this.astParser.extractComponentDefinitions(ast, file.path);
 
         totalImports += imports.length;
         totalExports += exports.length;
         totalJSXElements += jsxElements.length;
         totalInformativeElements += informativeElements.length;
 
-        // Create component information for dependency analysis
-        const componentInfo: ComponentInfo = {
-          name: file.name.replace(/\.(tsx?|jsx?)$/, ''),
-          type: 'functional',
-          file: file.path,
-          props: [],
-          state: [],
-          hooks: [],
-          children: [],
-          informativeElements: informativeElements.map(el => ({
-            type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
-            name: el.name,
-            props: el.props,
-            eventHandlers: el.eventHandlers.map(handler => ({
-              name: handler,
-              type: 'click',
-              handler: handler
+        // Phase 1 Refactor: Create ComponentInfo for each actual component definition found in file
+        // This replaces the old approach of creating one ComponentInfo per file
+        if (componentDefinitions.length > 0) {
+          // File contains component definitions - create ComponentInfo for each
+          for (const componentDef of componentDefinitions) {
+            const componentInfo: ComponentInfo = {
+              name: componentDef.name,
+              type: componentDef.type,
+              file: file.path,
+              line: componentDef.line,
+              column: componentDef.column,
+              props: [],
+              state: [],
+              hooks: [],
+              children: [],
+              informativeElements: informativeElements.map(el => ({
+                type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
+                name: el.name,
+                props: el.props,
+                // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
+                eventHandlers: el.eventHandlers,
+                dataBindings: el.dataBindings.map(binding => ({
+                  source: binding,
+                  target: 'element',
+                  type: 'data'
+                }))
+              })),
+              imports,
+              exports
+            };
+            components.push(componentInfo);
+          }
+        } else {
+          // File has no component definitions but may have JSX or logic
+          // Create a fallback ComponentInfo representing the file itself
+          // This handles utility files, config files, etc.
+          const componentInfo: ComponentInfo = {
+            name: file.name.replace(/\.(tsx?|jsx?)$/, ''),
+            type: 'functional',
+            file: file.path,
+            props: [],
+            state: [],
+            hooks: [],
+            children: [],
+            informativeElements: informativeElements.map(el => ({
+              type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
+              name: el.name,
+              props: el.props,
+              // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
+              eventHandlers: el.eventHandlers,
+              dataBindings: el.dataBindings.map(binding => ({
+                source: binding,
+                target: 'element',
+                type: 'data'
+              }))
             })),
-            dataBindings: el.dataBindings.map(binding => ({
-              source: binding,
-              target: 'element',
-              type: 'data'
-            }))
-          })),
-          imports,
-          exports
-        };
-        components.push(componentInfo);
+            imports,
+            exports
+          };
+          components.push(componentInfo);
+        }
 
         // Log detailed information for this file
         await this.logger.logInfo(`AST analysis completed for ${file.name}`, {

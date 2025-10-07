@@ -56,8 +56,15 @@ describe('Dependency Analyzer', () => {
       assert.ok(graph.nodes);
       assert.ok(graph.edges);
       assert.ok(graph.metadata);
-      assert.strictEqual(graph.nodes.length, 3); // Component + element + import
+      // Phase C: Now creates component + element + consolidated external package (react)
+      assert.strictEqual(graph.nodes.length, 3); // Component + element + external package
       assert.strictEqual(graph.metadata.statistics.totalNodes, 3);
+      
+      // Phase C: Verify external package node exists
+      const reactNode = graph.nodes.find(n => n.label === 'react' && n.nodeType === 'external-dependency');
+      assert.ok(reactNode, 'Should have consolidated react package node');
+      assert.strictEqual(reactNode.codeOwnership, 'external');
+      assert.strictEqual(reactNode.isInfrastructure, true);
     });
 
     it('should handle empty component array', () => {
@@ -362,6 +369,788 @@ describe('Dependency Analyzer', () => {
 
       assert.ok(edges);
       assert.strictEqual(edges.length, 0);
+    });
+
+    // Phase 2 tests: JSX usage edge creation
+    it('should create JSX usage edges when a component renders another component', () => {
+      const nodes = [
+        // Hello component definition in Hello.tsx
+        {
+          id: 'node1',
+          label: 'Hello',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Hello.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // index component definition in index.tsx
+        {
+          id: 'node2',
+          label: 'index',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/index.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Hello JSX element usage in index.tsx
+        {
+          id: 'node3',
+          label: 'Hello',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/index.tsx',
+          properties: {
+            elementType: 'display',
+            props: { compiler: 'expression', framework: 'React' }
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      // Should have at least one "renders" edge
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.ok(rendersEdges.length > 0, 'Should create at least one renders edge');
+      
+      // The edge should be from index component to Hello component
+      const indexToHelloEdge = rendersEdges.find(e => 
+        e.source === 'node2' && e.target === 'node1'
+      );
+      assert.ok(indexToHelloEdge, 'Should create edge from index to Hello component');
+      assert.strictEqual(indexToHelloEdge.relationship, 'renders');
+    });
+
+    it('should not create JSX usage edges for HTML elements', () => {
+      const nodes = [
+        // Component definition
+        {
+          id: 'node1',
+          label: 'MyComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // HTML button element (lowercase, should be ignored)
+        {
+          id: 'node2',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            elementType: 'input',
+            props: { onClick: 'expression' }
+          }
+        },
+        // HTML div element (lowercase, should be ignored)
+        {
+          id: 'node3',
+          label: 'div',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/MyComponent.tsx',
+          properties: {
+            elementType: 'display',
+            props: {}
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      // Should not create any "renders" edges for HTML elements
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.strictEqual(rendersEdges.length, 0, 'Should not create renders edges for HTML elements');
+    });
+
+    it('should create multiple JSX usage edges when multiple components are used', () => {
+      const nodes = [
+        // Button component
+        {
+          id: 'node1',
+          label: 'Button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Button.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Input component
+        {
+          id: 'node2',
+          label: 'Input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Input.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Form component that uses both Button and Input
+        {
+          id: 'node3',
+          label: 'Form',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // Button usage in Form
+        {
+          id: 'node4',
+          label: 'Button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            elementType: 'display',
+            props: { text: 'Submit' }
+          }
+        },
+        // Input usage in Form
+        {
+          id: 'node5',
+          label: 'Input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/src/components/Form.tsx',
+          properties: {
+            elementType: 'input',
+            props: { type: 'text' }
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+
+      const rendersEdges = edges.filter(e => e.relationship === 'renders');
+      assert.strictEqual(rendersEdges.length, 2, 'Should create two renders edges');
+      
+      // Form should render Button
+      const formToButton = rendersEdges.find(e => 
+        e.source === 'node3' && e.target === 'node1'
+      );
+      assert.ok(formToButton, 'Form should render Button');
+      
+      // Form should render Input
+      const formToInput = rendersEdges.find(e => 
+        e.source === 'node3' && e.target === 'node2'
+      );
+      assert.ok(formToInput, 'Form should render Input');
+    });
+
+    // Phase D tests: Same-file component usage support
+    it('should create JSX usage edges for components in the same file', () => {
+      const nodes = [
+        // ParentComponent definition in components.tsx
+        {
+          id: 'comp1',
+          label: 'ParentComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // ChildComponent definition in components.tsx
+        {
+          id: 'comp2',
+          label: 'ChildComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // ChildComponent JSX element usage in components.tsx
+        {
+          id: 'jsx1',
+          label: 'ChildComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/components.tsx',
+          codeOwnership: 'internal',
+          properties: { elementType: 'display' }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const renderEdges = edges.filter(e => e.relationship === 'renders');
+
+      // Phase D: Should detect same-file component usage
+      assert.strictEqual(renderEdges.length, 1, 'Should create one render edge for same-file usage');
+      assert.strictEqual(renderEdges[0].source, 'comp1', 'ParentComponent should be the source');
+      assert.strictEqual(renderEdges[0].target, 'comp2', 'ChildComponent should be the target');
+      assert.strictEqual(renderEdges[0].properties.usageFile, '/app/components.tsx');
+      assert.strictEqual(renderEdges[0].properties.definitionFile, '/app/components.tsx');
+    });
+
+    it('should not create self-referencing render edges', () => {
+      const nodes = [
+        // RecursiveComponent definition
+        {
+          id: 'comp1',
+          label: 'RecursiveComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        // RecursiveComponent JSX element (component rendering itself)
+        {
+          id: 'jsx1',
+          label: 'RecursiveComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { elementType: 'display' }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const renderEdges = edges.filter(e => e.relationship === 'renders');
+
+      // Phase D: Should prevent self-referencing edges
+      assert.strictEqual(renderEdges.length, 0, 'Should not create self-referencing render edges');
+    });
+
+    // Phase E tests: Component → JSX Element "Contains" Edges
+    it('should create contains edges only for JSX elements with matching parentComponent', () => {
+      const nodes = [
+        {
+          id: 'comp1',
+          label: 'MyComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'comp2',
+          label: 'OtherComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'jsx1',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'MyComponent' // Belongs to MyComponent
+          }
+        },
+        {
+          id: 'jsx2',
+          label: 'div',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/component.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'display',
+            parentComponent: 'OtherComponent' // Belongs to OtherComponent
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const containsEdges = edges.filter(e => e.relationship === 'contains');
+
+      // Phase E: Should have 2 edges: MyComponent→button and OtherComponent→div
+      assert.strictEqual(containsEdges.length, 2, 'Should create two contains edges');
+
+      // Verify correct parent-child relationships
+      const myComponentEdge = containsEdges.find(e => e.source === 'comp1');
+      const otherComponentEdge = containsEdges.find(e => e.source === 'comp2');
+
+      assert.ok(myComponentEdge, 'MyComponent should have a contains edge');
+      assert.strictEqual(myComponentEdge.target, 'jsx1', 'MyComponent should contain button');
+      assert.strictEqual(myComponentEdge.properties.parentComponent, 'MyComponent');
+
+      assert.ok(otherComponentEdge, 'OtherComponent should have a contains edge');
+      assert.strictEqual(otherComponentEdge.target, 'jsx2', 'OtherComponent should contain div');
+      assert.strictEqual(otherComponentEdge.properties.parentComponent, 'OtherComponent');
+    });
+
+    it('should not create contains edges between unrelated components in same file', () => {
+      const nodes = [
+        {
+          id: 'comp1',
+          label: 'ParentComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'comp2',
+          label: 'SiblingComponent',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            type: 'functional',
+            props: [],
+            state: [],
+            hooks: []
+          }
+        },
+        {
+          id: 'jsx1',
+          label: 'button',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'ParentComponent'
+          }
+        },
+        {
+          id: 'jsx2',
+          label: 'input',
+          nodeType: 'function',
+          nodeCategory: 'front end',
+          datatype: 'array',
+          liveCodeScore: 100,
+          file: '/app/multi.tsx',
+          codeOwnership: 'internal',
+          properties: { 
+            elementType: 'input',
+            parentComponent: 'SiblingComponent'
+          }
+        }
+      ];
+
+      const edges = analyzer.createEdges(nodes);
+      const containsEdges = edges.filter(e => e.relationship === 'contains');
+
+      // Phase E: Should NOT have ParentComponent→input or SiblingComponent→button
+      const wrongEdges = containsEdges.filter(e => 
+        (e.source === 'comp1' && e.target === 'jsx2') || // ParentComponent→input (WRONG)
+        (e.source === 'comp2' && e.target === 'jsx1')    // SiblingComponent→button (WRONG)
+      );
+
+      assert.strictEqual(wrongEdges.length, 0, 'Should not create cross-component edges');
+      
+      // Verify correct edges exist
+      const correctEdges = containsEdges.filter(e => 
+        (e.source === 'comp1' && e.target === 'jsx1') || // ParentComponent→button (CORRECT)
+        (e.source === 'comp2' && e.target === 'jsx2')    // SiblingComponent→input (CORRECT)
+      );
+      
+      assert.strictEqual(correctEdges.length, 2, 'Should create correct parent-child edges only');
+    });
+
+    // Phase F tests: JSX Instance Metadata (No Duplicate Nodes)
+    it('should not create duplicate nodes for component JSX usage (local)', () => {
+      const components = [
+        {
+          name: 'MainComponent',
+          type: 'class',
+          file: '/app/index.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'ChildComponent', 
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 15,
+              file: '/app/index.tsx'
+            } // Component usage (capitalized)
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
+
+      // Phase F: Should only have 1 node (definition), not 2 (definition + JSX instance)
+      assert.strictEqual(childComponentNodes.length, 1, 'Should only have component definition node, not JSX instance node');
+      
+      // Verify it's a component node, not a JSX element node
+      const childNode = childComponentNodes[0];
+      assert.ok(childNode.properties.type, 'Should have component type property');
+      assert.ok(!childNode.properties.elementType, 'Should not have elementType (not a JSX element node)');
+    });
+
+    it('should populate renderLocations metadata for component JSX usage', () => {
+      const components = [
+        {
+          name: 'MainComponent',
+          type: 'class',
+          file: '/app/index.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'ChildComponent', 
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 15,
+              file: '/app/index.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      // Call buildDependencyGraph to trigger renderLocations population
+      // We don't need the returned graph, just the side effect of populating metadata
+      analyzer.buildDependencyGraph(components);
+
+      // Phase F: ChildComponent should have renderLocations metadata
+      const childComponent = components.find(c => c.name === 'ChildComponent');
+      assert.ok(childComponent.renderLocations, 'Should have renderLocations array');
+      assert.strictEqual(childComponent.renderLocations.length, 1, 'Should have one render location');
+      
+      const renderLocation = childComponent.renderLocations[0];
+      assert.strictEqual(renderLocation.file, '/app/index.tsx', 'Should record correct usage file');
+      assert.strictEqual(renderLocation.line, 15, 'Should record correct line number');
+      assert.ok(renderLocation.context.includes('MainComponent'), 'Should record parent component name in context');
+    });
+
+    it('should create nodes for HTML elements (lowercase names)', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'button', // HTML element (lowercase)
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx'
+            },
+            { 
+              name: 'div', // HTML element (lowercase)
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: ['data'],
+              line: 8,
+              file: '/app/component.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // Phase F: HTML elements should create nodes (lowercase names)
+      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      const divNode = graph.nodes.find(n => n.label === 'div');
+      
+      assert.ok(buttonNode, 'Should create node for button (HTML element)');
+      assert.ok(divNode, 'Should create node for div (HTML element)');
+      
+      // Verify they have elementType (JSX element nodes)
+      assert.ok(buttonNode.properties.elementType, 'Button should have elementType');
+      assert.ok(divNode.properties.elementType, 'Div should have elementType');
+    });
+
+    it('should handle mixed HTML elements and component usage in same file', () => {
+      const components = [
+        {
+          name: 'ParentComponent',
+          type: 'functional',
+          file: '/app/parent.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            { 
+              name: 'button', // HTML element → create node
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/parent.tsx'
+            },
+            { 
+              name: 'ChildComponent', // Component usage → metadata only
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: [],
+              line: 12,
+              file: '/app/parent.tsx'
+            },
+            { 
+              name: 'div', // HTML element → create node
+              type: 'display',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [],
+              dataBindings: ['text'],
+              line: 15,
+              file: '/app/parent.tsx'
+            }
+          ],
+          imports: [],
+          exports: []
+        },
+        {
+          name: 'ChildComponent',
+          type: 'functional',
+          file: '/app/child.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // HTML elements should create nodes
+      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      const divNode = graph.nodes.find(n => n.label === 'div');
+      assert.ok(buttonNode, 'Should create node for button');
+      assert.ok(divNode, 'Should create node for div');
+      
+      // Component usage should NOT create duplicate node
+      const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
+      assert.strictEqual(childComponentNodes.length, 1, 'Should only have one ChildComponent node (definition only)');
+      
+      // ChildComponent should have renderLocations metadata
+      const childComponent = components.find(c => c.name === 'ChildComponent');
+      assert.ok(childComponent.renderLocations, 'ChildComponent should have renderLocations');
+      assert.strictEqual(childComponent.renderLocations.length, 1, 'Should record one usage location');
+      assert.strictEqual(childComponent.renderLocations[0].file, '/app/parent.tsx', 'Should record correct usage file');
+    });
+
+    // Phase C tests: External dependency consolidation
+    it('should consolidate multiple imports from same external package', () => {
+      const components = [
+        {
+          name: 'ComponentA',
+          type: 'functional',
+          file: '/src/ComponentA.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [
+            { source: 'react', specifiers: [{ name: 'useState', type: 'named' }] },
+            { source: 'react-dom', specifiers: [{ name: 'render', type: 'named' }] }
+          ],
+          exports: []
+        },
+        {
+          name: 'ComponentB',
+          type: 'functional',
+          file: '/src/ComponentB.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [],
+          imports: [
+            { source: 'react', specifiers: [{ name: 'useEffect', type: 'named' }] },
+            { source: 'react-dom/client', specifiers: [{ name: 'createRoot', type: 'named' }] }
+          ],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+
+      // Should have 2 components + 2 consolidated external packages (react, react-dom)
+      assert.strictEqual(graph.nodes.length, 4);
+
+      // Check for consolidated react package node
+      const reactNode = graph.nodes.find(n => n.label === 'react' && n.nodeType === 'external-dependency');
+      assert.ok(reactNode, 'Should have one consolidated react node');
+      assert.strictEqual(reactNode.codeOwnership, 'external');
+      assert.strictEqual(reactNode.isInfrastructure, true);
+      assert.strictEqual(reactNode.nodeCategory, 'library');
+
+      // Check for consolidated react-dom package node
+      const reactDomNode = graph.nodes.find(n => n.label === 'react-dom' && n.nodeType === 'external-dependency');
+      assert.ok(reactDomNode, 'Should have one consolidated react-dom node');
+      assert.strictEqual(reactDomNode.codeOwnership, 'external');
+
+      // Should have edges from both components to react package
+      const reactImportEdges = graph.edges.filter(e => 
+        e.relationship === 'imports' && e.target === reactNode.id
+      );
+      assert.strictEqual(reactImportEdges.length, 2, 'Both components should import from react');
     });
   });
 

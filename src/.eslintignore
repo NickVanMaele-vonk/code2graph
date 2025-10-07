@@ -1,0 +1,6 @@
+cloned-repos/
+project-docs/
+.github/
+.gitexclude/
+log/
+graph-data-files/

@@ -2,8 +2,8 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
+- **Version**: 1.1
+- **Date**: 2025-10-06
 - **Author**: Nick Van Maele
 - **Project**: code2graph
 
@@ -19,11 +19,13 @@ AI-generated code often contains duplicate and unused components, making the res
 
 ### 1.3 Solution Overview
 A specialized tool that:
-- Analyzes React components at the granular level of informative elements (buttons, inputs, data displays)
+- Analyzes React components at the **component level** (not file level), detecting individual functional and class components within files
+- Prioritizes granular analysis of **custom code** while treating external libraries as black-box infrastructure
 - Traces dependencies from frontend UI elements through API calls to backend services and database operations
-- Generates structured graph data in multiple formats (JSON, GraphML, DOT)
+- Follows **UI → Database flow** principle for intuitive dependency understanding
+- Generates structured graph data in multiple formats (JSON, GraphML, DOT) with clear distinction between custom code and external dependencies
 - Identifies dead code by tracking unused components, functions, and database entities
-- Provides visual representations of the complete application architecture
+- Provides visual representations of the complete application architecture with filtering capabilities
 
 ---
 
@@ -53,7 +55,15 @@ A specialized tool that:
 - **Security**: ensure read-only view on repo, always use sandbox environment, and never execute repo code
 
 #### 3.1.2 Component Analysis
-- **React Component Detection**: Identify functional components, class components, and hooks
+- **React Component Detection**: 
+  - Identify individual components within files (component-level granularity, not file-level)
+  - Support functional components (arrow functions, function declarations, function expressions)
+  - Support class components extending React.Component or Component
+  - Validate React naming conventions (uppercase first letter)
+  - Filter detection to React files only (.tsx/.jsx extensions or files importing React)
+  - Track precise source locations (file, line, column) for each component
+  - Handle multiple components per file correctly
+  - Exclude non-component files (webpack.config.js, utility files, etc.)
 - **Informative Element Identification**: Find components that exchange internal data with users:
   - Components that display database data to users (e.g., displaying a list of club members)
   - Components that capture user input or choices (e.g., forms, dialogs with Accept/Reject buttons)
@@ -62,6 +72,11 @@ A specialized tool that:
   - **Primary AST Node Types**: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
   - **Display Elements**: JSX elements with JSXExpressionContainer containing props/state data
   - **Input Elements**: JSX elements with event handlers (onClick, onChange, onSubmit)
+  - **Event Handler Analysis**: Extract function calls from event handlers:
+    - Function references: `onClick={handleClick}` → identifies "handleClick" as target function
+    - Arrow functions: `onClick={() => { func1(); func2(); }}` → identifies ["func1", "func2"] as targets
+    - Inline functions: `onClick={function() { doSomething(); }}` → identifies ["doSomething"] as target
+    - Multiple calls per handler supported for complete data flow tracking
   - **Data Sources**: CallExpression patterns for API calls
   - **State Management**: VariableDeclarator with useState patterns
   - **Node Creation Rules**: Imported components become nodes if used; data arrays/variables become nodes; functions handling data/interaction become nodes; API endpoints normalized with parameters (e.g., :clubid); database tables/views become nodes; conditionally rendered components become nodes; JSX fragments analyzed same as regular JSX
@@ -69,18 +84,35 @@ A specialized tool that:
   - **Naming Conventions**: Use import alias for components; use array variable name for data arrays; use function name for functions; use parameterized form for API endpoints
   - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "middleware", "database"}
   - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports
-  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"calls", "reads", "writes to"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
+  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"imports", "calls", "reads", "writes to", "renders", "contains"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
+  - **Event Handler Edges**: Create "calls" edges from JSX elements to handler functions based on parsed event handler expressions; supports function references, arrow functions, and inline functions; enables complete user interaction flow: User → Button → handleClick → validateInput → API → Database
 - **JSX Element Parsing**: Analyze JSX structure to identify component relationships
 - **Import/Export Mapping**: Track component dependencies and usage
 - **Circular Dependency Detection**: Identify problematic dependency cycles
 
 #### 3.1.3 Dependency Tracing
+- **Edge Direction Philosophy**: All edges follow UI → Database flow for intuitive tracing
+  - Component → Import (dependency on external library)
+  - Component → JSX Element (structural parent-child with "contains" relationship)
+  - Component A → Component B (component usage with "renders" relationship)
+  - Component → API (invocation with "calls" relationship)
+  - API → Database (data access with "reads" or "writes to" relationship)
 - **Frontend-to-API Mapping**: Connect React components to API endpoint calls
 - **API Route Analysis**: Identify Express.js routes and middleware (framework-agnostic approach)
 - **Service Layer Analysis**: Track business logic functions between API routes and database operations (e.g., getUserById, calculateTotalPrice)
 - **Database Operations Analysis**: Connect services to database operations, focusing on:
   - Tables and views only (persistent data entities)
   - SELECT, UPSERT, INSERT statements that read/update table data
+- **External Dependency Handling**:
+  - Create one node per external package (not per import statement)
+  - Minimal detail (package name, version) to reduce noise
+  - Flag as infrastructure for easy filtering
+  - Example: All React imports → single "react" node
+- **JSX Instance Handling**:
+  - Store JSX usage as metadata on component definitions (renderLocations)
+  - Do not create separate nodes for JSX instances (avoids duplication)
+  - Track WHERE components are rendered without creating redundant nodes
+- **Recursion Prevention**: Prevent self-referencing edges to avoid infinite loops while supporting same-file component usage
 
 #### 3.1.4 Dead Code Detection
 - **Dead Code Definition**: Code defined in one location but never called anywhere else in the same repository
@@ -96,7 +128,13 @@ A specialized tool that:
 - **GraphML Format**: For professional graph analysis tools
 - **DOT Format**: For Graphviz visualization
 - **Node Structure**: Every function/informative element = node, function calls = edges
-- **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders", where "reads" and "writes to" are used only if the target node is a database table or database view
+- **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains"
+  - "contains": Component → JSX Element (structural parent-child)
+  - "renders": Component → Component (component usage/rendering)
+  - "imports": Component → External Package (dependency)
+  - "calls": Component/API → API/Function (invocation)
+  - "reads": API → Database Table/View (data read)
+  - "writes to": API → Database Table/View (data write)
 - **Dead Code Identification**: Nodes with liveCodeScore = 0 (no incoming edges)
 - **Live Code Identification**: Nodes with liveCodeScore = 100 (has incoming edges)
 - **Dead Code Report**: List dead codes, i.e., nodes with liveCodeScore = 0
@@ -291,16 +329,20 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - **Node Properties**: 
   - `id`: Unique identifier
   - `label`: Human-readable name
-  - `type`: Component type ("function" | "API" | "table" | "view" | "route" | string)
+  - `type`: Component type ("function" | "API" | "table" | "view" | "route" | "external-dependency" | string)
   - `file`: Source file location
-  - `line`: Line number (optional)
+  - `line`: Line number (optional, required for components)
+  - `column`: Column number (optional, required for components)
   - `liveCodeScore`: Integer 0-100 (0 = dead code, 100 = live code)
   - `datatype`: Data type label (array, list, integer, table, view, etc.)
-  - `category`: Layer category (front end, middleware, database)
+  - `category`: Layer category (front end, middleware, database, library)
+  - `codeOwnership`: "internal" (custom code) or "external" (standard libraries) - enables filtering
+  - `isInfrastructure`: Boolean flag for external dependencies (enables easy filtering)
 - **Edge Properties**:
   - `source`: Source node ID
   - `target`: Target node ID
-  - `relationship`: Type of relationship ("imports" | "calls" | "uses" | "reads" | "writes to" | "renders")
+  - `relationship`: Type of relationship ("imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains")
+  - Direction follows UI → Database flow principle
 - **Metadata**:
   - Version number of code2graph tool
   - UTC timestamp of output file creation
@@ -312,8 +354,16 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 
 ### 10.2 Visualization Requirements
 - **Dead Code Highlighting**: Red fill for nodes with liveCodeScore = 0
-- **Filtering**: Ability to show only dead nodes or only live nodes
-- **Graph Layout**: Clear visualization of dependency relationships
+- **Code Ownership Distinction**: 
+  - Internal nodes (custom code): Colored, detailed display
+  - External nodes (libraries): Grayed out, minimal display
+- **Filtering Options**:
+  - Show only dead nodes (liveCodeScore = 0)
+  - Show only live nodes (liveCodeScore = 100)
+  - Show only custom code (codeOwnership = "internal")
+  - Show only external dependencies (isInfrastructure = true)
+  - Show everything with visual distinction (default)
+- **Graph Layout**: Clear visualization of dependency relationships following UI → Database flow
 
 ### 10.3 Configuration-Based Output
 - **File Format**: Specified in global configuration
@@ -405,6 +455,61 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - **Usage Instructions**: How to provide repository URL and use Include/Exclude dialog
 - **Output Interpretation**: How to use output files with recommended visualization tool
 - **Troubleshooting**: Common issues and solutions
+
+---
+
+## 15. Custom Code Focus Philosophy
+
+### 15.1 Core Principle
+Code2Graph prioritizes granular analysis of **custom code** while treating **external libraries as black-box infrastructure**.
+
+### 15.2 Analogy
+Like analyzing a keyboard press:
+- **Focus on**: User presses 'b' → Letter 'b' appears on screen
+- **Abstract away**: Electronic contact → ASCII code → Windows interpretation → Graphics card → Pixel activation
+
+Applied to React applications:
+- **Focus on**: MainComponent defined → Rendered at location → User clicks button → API called → Database updated
+- **Abstract away**: React.Component internals → React rendering engine → Event system implementation
+
+### 15.3 Implementation Strategy
+
+#### Custom Code (Internal)
+- **Granularity**: Component-level, not file-level
+- **Detail**: Full properties (props, state, hooks, line numbers, render locations)
+- **Node Count**: One node per actual component definition
+- **Example**: File with 3 components → 3 nodes
+
+#### External Dependencies (Infrastructure)
+- **Granularity**: Package-level, not import-level
+- **Detail**: Minimal (package name, version only)
+- **Node Count**: One node per external package
+- **Example**: 5 React imports in 3 files → 1 "react" node
+
+### 15.4 User Benefits
+1. **Reduced Noise**: Focus on what matters (your code)
+2. **Scalability**: Fewer nodes for large applications
+3. **Clarity**: Clear distinction between custom and external
+4. **Flexibility**: Easy filtering to show/hide external dependencies
+5. **Performance**: Faster analysis and rendering with fewer nodes
+
+### 15.5 Filtering Strategy
+```typescript
+// Default view: Show everything with visual distinction
+allNodes
+
+// Custom code only: Focus on your code
+nodes.filter(n => n.codeOwnership === "internal")
+
+// External dependencies only: Audit dependencies
+nodes.filter(n => n.isInfrastructure === true)
+
+// Dead code only: Cleanup focus
+nodes.filter(n => n.liveCodeScore === 0)
+
+// Live custom code: Active development focus
+nodes.filter(n => n.codeOwnership === "internal" && n.liveCodeScore === 100)
+```
 
 ---
 

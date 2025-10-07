@@ -94,8 +94,8 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       // Create nodes from components
       const nodes = this.createNodesFromComponents(components, liveCodeScores);
 
-      // Create edges between nodes
-      const edges = this.createEdges(nodes);
+      // Phase C: Create edges between nodes (now includes component info for import edges)
+      const edges = this.createEdges(nodes, components);
 
       // Create metadata
       const metadata = this.createGraphMetadata(components, nodes, edges);
@@ -320,21 +320,19 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * Creates edges between nodes based on their relationships
    * Implements edge creation rules from the architecture document
    * 
+   * Phase 2 Enhancement: Added JSX usage edge creation to capture component rendering relationships
+   * Phase C Enhancement: Added consolidated import edge creation to external packages
+   * 
    * @param nodes - Array of nodes to create edges for
+   * @param components - Optional array of component information for import edge creation
    * @returns EdgeInfo[] - Array of edge information
    */
-  createEdges(nodes: NodeInfo[]): EdgeInfo[] {
+  createEdges(nodes: NodeInfo[], components?: ComponentInfo[]): EdgeInfo[] {
     const edges: EdgeInfo[] = [];
 
     try {
       // Create edges based on node relationships
       for (const node of nodes) {
-        // Create edges for component imports
-        if (node.nodeType === 'function' && node.nodeCategory === 'front end') {
-          const importEdges = this.createImportEdges(node, nodes);
-          edges.push(...importEdges);
-        }
-
         // Create edges for API calls
         if (node.nodeType === 'API') {
           const apiEdges = this.createAPIEdges(node, nodes);
@@ -348,6 +346,25 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         }
       }
 
+      // Phase C: Create import edges from components to consolidated external packages
+      // This replaces the old per-import edge creation with consolidated package edges
+      if (components) {
+        const importEdges = this.createConsolidatedImportEdges(nodes, components);
+        edges.push(...importEdges);
+      }
+
+      // Phase 2: Create JSX usage edges (component A renders component B)
+      // This detects when a JSX element represents a component being rendered
+      // Example: <Hello /> in index.tsx should create an edge from index component to Hello component
+      const jsxUsageEdges = this.createJSXUsageEdges(nodes);
+      edges.push(...jsxUsageEdges);
+
+      // Phase E: Create "contains" edges (component contains JSX elements)
+      // This detects which HTML elements (button, div, input) belong to which component
+      // Example: MyComponent with <button onClick={...}> creates MyComponent --contains--> button
+      const containsEdges = this.createContainsEdges(nodes);
+      edges.push(...containsEdges);
+
       // Remove duplicate edges
       const uniqueEdges = this.removeDuplicateEdges(edges);
 
@@ -356,6 +373,8 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
           totalEdges: uniqueEdges.length,
           importEdges: uniqueEdges.filter(e => e.relationship === 'imports').length,
           callEdges: uniqueEdges.filter(e => e.relationship === 'calls').length,
+          rendersEdges: uniqueEdges.filter(e => e.relationship === 'renders').length,
+          containsEdges: uniqueEdges.filter(e => e.relationship === 'contains').length,
           dataEdges: uniqueEdges.filter(e => e.relationship === 'reads' || e.relationship === 'writes to').length
         });
       }
@@ -733,32 +752,240 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo[] - Array of created nodes
    */
+  /**
+   * Phase C: Creates nodes from components with consolidated external dependencies
+   * Phase F: Prevents duplicate component nodes by storing JSX usage as metadata
+   * 
+   * Node Creation Rules:
+   * - Component nodes (internal code) created for each component definition
+   * - HTML element nodes (button, div, input) created for JSX elements
+   * - Component usage nodes NOT created - stored as renderLocations metadata
+   * - External package nodes consolidated (one per package, not per import)
+   * 
+   * Phase F Business Logic:
+   * - If JSX element name is capitalized (e.g., <MainComponent />) → Component usage
+   *   - Don't create node, add to target component's renderLocations
+   * - If JSX element name is lowercase (e.g., <button>, <div>) → HTML element
+   *   - Create node as before
+   * 
+   * Example: File has MainComponent and <MainComponent /> usage
+   *   Before Phase F: 2 nodes (definition + JSX instance) → duplication
+   *   After Phase F: 1 node (definition only) + renderLocations metadata
+   * 
+   * @param components - Array of components to analyze
+   * @param liveCodeScores - Map of component IDs to live code scores
+   * @returns NodeInfo[] - Array of created nodes
+   */
   private createNodesFromComponents(components: ComponentInfo[], liveCodeScores: Map<string, number>): NodeInfo[] {
     const nodes: NodeInfo[] = [];
 
+    // Phase C: Create component nodes (internal code)
     for (const component of components) {
-      // Create main component node with live code score
       const componentNode = this.createComponentNode(component, liveCodeScores);
       nodes.push(componentNode);
 
-      // Create nodes for informative elements
+      // Phase F: Create nodes only for HTML elements, not component usages
       for (const element of component.informativeElements) {
-        const elementNode = this.createElementNode(element, component.file, liveCodeScores);
-        nodes.push(elementNode);
-      }
-
-      // Create nodes for imports
-      for (const importInfo of component.imports) {
-        const importNode = this.createImportNode(importInfo, component.file, liveCodeScores);
-        nodes.push(importNode);
+        // Check if this element is a component usage (capitalized name)
+        const isComponentUsage = this.isElementNameComponentUsage(element.name);
+        
+        if (isComponentUsage) {
+          // Phase F: Don't create node for component usage
+          // Instead, add to renderLocations metadata on the target component
+          const targetComponent = components.find(comp => comp.name === element.name);
+          
+          if (targetComponent) {
+            // Initialize renderLocations if not exists
+            if (!targetComponent.renderLocations) {
+              targetComponent.renderLocations = [];
+            }
+            
+            // Add usage location as metadata
+            targetComponent.renderLocations.push({
+              file: component.file,
+              line: element.line || 0,
+              context: `Used in ${component.name}`
+            });
+            
+            if (this.logger) {
+              this.logger.logInfo('Phase F: Component usage stored as metadata', {
+                component: element.name,
+                usedIn: component.name,
+                file: component.file
+              });
+            }
+          }
+          // Skip node creation for component usage
+        } else {
+          // Create node for HTML element (button, div, input, etc.)
+          const elementNode = this.createElementNode(element, component.file, liveCodeScores);
+          nodes.push(elementNode);
+        }
       }
     }
+
+    // Phase C: Create consolidated external dependency nodes (one per package)
+    const externalPackages = this.consolidateExternalImports(components);
+    nodes.push(...externalPackages.values());
 
     return nodes;
   }
 
   /**
+   * Phase C: Checks if an import source is an external package
+   * External packages don't start with './' or '../'
+   * @param importSource - Import source string (e.g., 'react', './MyComponent')
+   * @returns boolean - True if external package
+   */
+  private isExternalPackage(importSource: string): boolean {
+    return !importSource.startsWith('./') && !importSource.startsWith('../');
+  }
+
+  /**
+   * Phase C: Extracts package name from import source
+   * Handles scoped packages (e.g., '@babel/core' → '@babel/core')
+   * Handles sub-paths (e.g., 'react-dom/client' → 'react-dom')
+   * @param importSource - Import source string
+   * @returns string - Package name
+   */
+  private getPackageName(importSource: string): string {
+    const parts = importSource.split('/');
+    // Scoped packages like '@babel/core'
+    if (parts[0].startsWith('@')) {
+      return `${parts[0]}/${parts[1]}`;
+    }
+    // Regular packages
+    return parts[0];
+  }
+
+  /**
+   * Phase C: Consolidates external imports into single package nodes
+   * Creates one node per external package instead of one per import statement
+   * @param components - Array of components to analyze
+   * @returns Map<string, NodeInfo> - Map of package names to consolidated nodes
+   */
+  private consolidateExternalImports(components: ComponentInfo[]): Map<string, NodeInfo> {
+    const externalPackages = new Map<string, NodeInfo>();
+    
+    for (const component of components) {
+      for (const importInfo of component.imports) {
+        if (this.isExternalPackage(importInfo.source)) {
+          const packageName = this.getPackageName(importInfo.source);
+          
+          if (!externalPackages.has(packageName)) {
+            externalPackages.set(packageName, {
+              id: this.generateNodeId(),
+              label: packageName,
+              nodeType: 'external-dependency',
+              nodeCategory: 'library',
+              datatype: 'array',
+              liveCodeScore: 100, // External packages are always "live" infrastructure
+              file: '', // No specific file - it's a package
+              codeOwnership: 'external',
+              isInfrastructure: true,
+              properties: {
+                packageName: packageName,
+                importType: 'external'
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    return externalPackages;
+  }
+
+  /**
+   * Phase C: Creates import edges from components to consolidated external packages
+   * Also creates edges for internal imports (component to component)
+   * @param allNodes - All nodes in the graph
+   * @param components - Array of components with import information
+   * @returns EdgeInfo[] - Array of import edges
+   */
+  private createConsolidatedImportEdges(allNodes: NodeInfo[], components: ComponentInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    for (const component of components) {
+      // Find the component node for this component
+      const componentNode = allNodes.find(n => 
+        n.label === component.name && 
+        n.file === component.file &&
+        n.codeOwnership === 'internal'
+      );
+      
+      if (!componentNode) continue;
+      
+      for (const importInfo of component.imports) {
+        if (this.isExternalPackage(importInfo.source)) {
+          // External import - find consolidated external package node
+          const packageName = this.getPackageName(importInfo.source);
+          const packageNode = allNodes.find(n => 
+            n.label === packageName && 
+            n.nodeType === 'external-dependency'
+          );
+          
+          if (packageNode) {
+            edges.push({
+              id: this.generateEdgeId(),
+              source: componentNode.id,
+              target: packageNode.id,
+              relationship: 'imports',
+              properties: {
+                importType: 'external',
+                packageName: packageName,
+                importSource: importInfo.source
+              }
+            });
+          }
+        } else {
+          // Internal import - find the actual component node
+          // Handle relative imports like './components/Hello' or '../Hello'
+          const targetComponent = allNodes.find(n => 
+            n.codeOwnership === 'internal' &&
+            this.matchesImportPath(n, importInfo.source)
+          );
+          
+          if (targetComponent) {
+            edges.push({
+              id: this.generateEdgeId(),
+              source: componentNode.id,
+              target: targetComponent.id,
+              relationship: 'imports',
+              properties: {
+                importType: 'internal',
+                importSource: importInfo.source
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    return edges;
+  }
+
+  /**
+   * Phase C: Checks if a node matches an import path
+   * Uses simple heuristic: extracts component name from last part of path
+   * @param node - Node to check
+   * @param importPath - Import path (e.g., './components/Hello', '../Hello')
+   * @returns boolean - True if node matches the import path
+   */
+  private matchesImportPath(node: NodeInfo, importPath: string): boolean {
+    // Simple heuristic: extract the component name from the import path
+    // './components/Hello' → 'Hello'
+    // '../Hello' → 'Hello'
+    const parts = importPath.split('/');
+    const lastPart = parts[parts.length - 1];
+    
+    // Check if node label matches the last part of the import path
+    return node.label === lastPart;
+  }
+
+  /**
    * Creates a node for a component
+   * Phase 1 Enhancement: Now includes line/column information for component-level tracking
    * @param component - Component information
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created component node
@@ -776,6 +1003,9 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       datatype: 'array' as DataType,
       liveCodeScore,
       file: component.file,
+      line: component.line,
+      column: component.column,
+      codeOwnership: 'internal', // Phase A: React components are custom code
       properties: {
         type: component.type,
         props: component.props,
@@ -827,6 +1057,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       datatype,
       liveCodeScore,
       file,
+      codeOwnership: 'internal', // Phase A: JSX elements are part of custom UI code
       properties: {
         elementType: element.type,
         props: element.props,
@@ -837,58 +1068,226 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   }
 
   /**
-   * Creates a node for an import
-   * @param importInfo - Import information
-   * @param file - File path
-   * @param liveCodeScores - Map of component IDs to live code scores
-   * @returns NodeInfo - Created import node
+   * Phase C Note: createImportNode and createImportEdges methods removed
+   * Replaced by consolidateExternalImports() and createConsolidatedImportEdges()
+   * Old approach created one node per import statement
+   * New approach creates one node per external package (consolidated)
    */
-  private createImportNode(importInfo: ImportInfo, file: string, liveCodeScores: Map<string, number>): NodeInfo {
-    // Find the usage info for this import to get the live code score
-    const importId = `import_${importInfo.source}`;
-    const liveCodeScore = liveCodeScores.get(importId) ?? 100;
-
-    return {
-      id: this.generateNodeId(),
-      label: importInfo.source,
-      nodeType: 'function' as NodeType,
-      nodeCategory: 'front end' as NodeCategory,
-      datatype: 'array' as DataType,
-      liveCodeScore,
-      file,
-      properties: {
-        importType: 'external',
-        specifiers: importInfo.specifiers.map((s: { name: string; type: string }) => ({ name: s.name, type: s.type }))
-      }
-    };
-  }
 
   /**
-   * Creates import edges for a node
-   * @param node - Source node
-   * @param allNodes - All available nodes
-   * @returns EdgeInfo[] - Array of import edges
+   * Creates JSX usage edges for components that render other components
+   * Phase 2 Implementation: Detects when a component renders another component via JSX
+   * Phase D Enhancement: Now detects same-file component usage with self-reference prevention
+   * 
+   * Business Logic:
+   * - Identifies JSX element nodes that represent custom React components (capitalized names)
+   * - Matches these JSX elements to their component definitions based on name
+   * - Creates "renders" edges from the parent component to the rendered component
+   * - Handles multiple components per file correctly
+   * - Prevents self-referencing edges (recursion detection)
+   * 
+   * Example: If MainComponent in index.tsx contains <Hello />, this creates an edge:
+   *   MainComponent --renders--> Hello component
+   * 
+   * Phase D: Now also detects same-file usage:
+   *   If components.tsx has ParentComponent and ChildComponent,
+   *   and ParentComponent renders <ChildComponent />,
+   *   creates edge: ParentComponent --renders--> ChildComponent
+   * 
+   * @param allNodes - All available nodes in the graph
+   * @returns EdgeInfo[] - Array of JSX usage edges with "renders" relationship
    */
-  private createImportEdges(node: NodeInfo, allNodes: NodeInfo[]): EdgeInfo[] {
+  private createJSXUsageEdges(allNodes: NodeInfo[]): EdgeInfo[] {
     const edges: EdgeInfo[] = [];
-    
-    // Find imported components and create edges
-    const imports = (node.properties.specifiers as Array<{ name: string; type: string }>) || [];
-    for (const importSpec of imports) {
-      const targetNode = allNodes.find(n => n.label === importSpec.name);
-      if (targetNode) {
+
+    // Separate component definition nodes from JSX element nodes
+    const componentNodes = allNodes.filter(node => 
+      node.properties.type !== undefined && 
+      node.nodeType === 'function' &&
+      node.nodeCategory === 'front end' &&
+      !node.properties.elementType // Not a JSX element, but a component definition
+    );
+
+    const jsxElementNodes = allNodes.filter(node => 
+      this.isJSXComponentUsage(node)
+    );
+
+    // For each JSX element that represents a component usage
+    for (const jsxNode of jsxElementNodes) {
+      // Phase D: Find the component definition that this JSX element references
+      // REMOVED file restriction to support same-file component usage
+      const targetComponentNode = componentNodes.find(compNode => 
+        compNode.label === jsxNode.label // Same name (e.g., "Hello")
+        // Phase D: Removed "compNode.file !== jsxNode.file" restriction
+      );
+
+      if (!targetComponentNode) {
+        // JSX element doesn't reference a known component, skip
+        continue;
+      }
+
+      // Find the parent component(s) in the same file as the JSX element
+      const parentComponents = componentNodes.filter(compNode => 
+        compNode.file === jsxNode.file
+      );
+
+      // Create edges from each parent component to the target component
+      for (const parentComponent of parentComponents) {
+        // Phase D: Prevent self-referencing (recursion detection)
+        // If ParentComponent renders <ParentComponent />, don't create edge
+        if (parentComponent.id === targetComponentNode.id) {
+          continue;
+        }
+        
         edges.push({
           id: this.generateEdgeId(),
-          source: node.id,
-          target: targetNode.id,
-          relationship: 'imports' as RelationshipType,
+          source: parentComponent.id,
+          target: targetComponentNode.id,
+          relationship: 'renders' as RelationshipType,
           properties: {
-            importType: importSpec.type
+            jsxElement: jsxNode.label,
+            usageFile: jsxNode.file,
+            definitionFile: targetComponentNode.file,
+            usageComponent: parentComponent.label
           }
         });
       }
     }
 
+    return edges;
+  }
+
+  /**
+   * Checks if a node represents a JSX element that is a component usage (not an HTML element)
+   * 
+   * Business Logic:
+   * - React components must start with an uppercase letter (React convention)
+   * - HTML elements start with lowercase (div, span, button, etc.)
+   * - JSX element nodes have elementType property
+   * 
+   * Root Cause Fix: Removed HTML element list check that was causing false positives.
+   * The capitalization check alone is sufficient and follows React's strict naming convention:
+   *   - PascalCase (Button, Input) = React component
+   *   - lowercase (button, input) = HTML element
+   * 
+   * This prevents React components named 'Button' or 'Input' from being incorrectly
+   * rejected as HTML elements.
+   * 
+   * @param node - Node to check
+   * @returns boolean - True if this is a JSX component usage, false if HTML element or other
+   */
+  private isJSXComponentUsage(node: NodeInfo): boolean {
+    // Check if node has elementType property (indicates it's a JSX element)
+    const elementType = node.properties.elementType as string | undefined;
+    if (!elementType) {
+      return false;
+    }
+
+    // Check if the label (element name) starts with an uppercase letter
+    // React convention: Component names start with uppercase, HTML elements with lowercase
+    // This check alone is sufficient - React enforces this convention strictly
+    const firstChar = node.label.charAt(0);
+    const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
+
+    return isCapitalized;
+  }
+
+  /**
+   * Phase F: Checks if an element name represents a component usage (not an HTML element)
+   * Used during node creation to distinguish between:
+   *   - Component usage: <MainComponent />, <Hello /> → Don't create node
+   *   - HTML element: <button>, <div>, <input> → Create node
+   * 
+   * React Naming Convention:
+   *   - Components: PascalCase (first letter uppercase)
+   *   - HTML elements: lowercase
+   * 
+   * @param elementName - Name of the element to check
+   * @returns boolean - True if component usage (capitalized), false if HTML element (lowercase)
+   */
+  private isElementNameComponentUsage(elementName: string): boolean {
+    if (!elementName || elementName.length === 0) {
+      return false;
+    }
+    
+    // Check if first character is uppercase
+    // React enforces: Component names MUST start with uppercase letter
+    const firstChar = elementName.charAt(0);
+    const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
+    
+    return isCapitalized;
+  }
+
+  /**
+   * Phase E: Creates "contains" edges from components to their JSX elements
+   * Uses parentComponent field (added in Phase B) for accurate component-to-element mapping
+   * 
+   * Business Logic:
+   * - Only creates edges for HTML elements (button, div, input), not component usage
+   * - Uses parentComponent field to match elements to their owning component
+   * - Prevents cross-component contamination in files with multiple components
+   * 
+   * Example: If MyComponent contains <button onClick={...}>, creates edge:
+   *   MyComponent --contains--> button (JSX element node)
+   * 
+   * This is crucial for understanding UI structure and data flow:
+   * - Which components have user input elements (buttons, forms)
+   * - Which components display data (divs, spans with data bindings)
+   * - Complete UI hierarchy from component to actual DOM elements
+   * 
+   * @param allNodes - All available nodes in the graph
+   * @returns EdgeInfo[] - Array of "contains" edges
+   */
+  private createContainsEdges(allNodes: NodeInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Get component nodes (internal custom code only)
+    const componentNodes = allNodes.filter(node => 
+      node.properties.type !== undefined && 
+      node.nodeType === 'function' &&
+      node.nodeCategory === 'front end' &&
+      !node.properties.elementType && // Not a JSX element, but a component definition
+      node.codeOwnership === 'internal' // Only custom components, not external
+    );
+    
+    // Get JSX element nodes (HTML elements only, not component usage)
+    const jsxElementNodes = allNodes.filter(node => 
+      node.properties.elementType !== undefined &&
+      !this.isJSXComponentUsage(node) // Exclude component usage (e.g., <MyComponent />)
+    );
+    
+    // Phase E: Create edges from components to their JSX children using parentComponent field
+    for (const componentNode of componentNodes) {
+      // Find JSX elements that belong to this specific component
+      // Phase B added parentComponent field for precise tracking
+      const jsxChildren = jsxElementNodes.filter(jsx => 
+        jsx.properties.parentComponent === componentNode.label &&
+        jsx.file === componentNode.file // Must be in same file
+      );
+      
+      for (const jsxChild of jsxChildren) {
+        edges.push({
+          id: this.generateEdgeId(),
+          source: componentNode.id,
+          target: jsxChild.id,
+          relationship: 'contains',
+          properties: {
+            elementType: jsxChild.properties.elementType,
+            elementName: jsxChild.label,
+            parentComponent: componentNode.label
+          }
+        });
+      }
+    }
+    
+    if (this.logger) {
+      this.logger.logInfo('Contains edges created using parentComponent tracking', {
+        totalComponentNodes: componentNodes.length,
+        totalJSXElements: jsxElementNodes.length,
+        containsEdges: edges.length
+      });
+    }
+    
     return edges;
   }
 

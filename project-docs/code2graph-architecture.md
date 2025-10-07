@@ -2,8 +2,8 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.0
-- **Date**: 2024-12-19
+- **Version**: 1.1
+- **Date**: 2025-10-06
 - **Author**: Nick Van Maele
 - **Project**: code2graph
 
@@ -20,6 +20,8 @@ Code2Graph is a static analysis tool that creates comprehensive dependency graph
 - **Performance**: Efficient processing of large codebases
 - **Reliability**: Graceful handling of malformed or complex code
 - **Maintainability**: Clear separation of concerns and comprehensive testing
+- **Custom Code Focus**: Prioritize granular analysis of custom code while treating external libraries as black-box infrastructure
+- **Signal Flow Clarity**: Edge direction follows UI → Database flow for intuitive dependency tracing
 
 ### 1.3 High-Level Architecture
 
@@ -101,6 +103,7 @@ interface ASTParser {
   extractExports(ast: ASTNode): ExportInfo[];
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
   extractInformativeElements(ast: ASTNode): InformativeElementInfo[];
+  extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[];
   findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
 }
 ```
@@ -109,9 +112,13 @@ interface ASTParser {
 - Parse TypeScript/JavaScript files using @babel/parser
 - Extract import/export information
 - Parse JSX elements and components
+- **Extract individual component definitions** within files (functional, class, arrow functions)
+- Validate component naming conventions (uppercase first letter for React components)
+- Filter component detection to React files only (.tsx/.jsx or files importing React)
 - Identify specific AST node types: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
 - Handle different file types and syntax
 - Detect informative elements through AST traversal
+- Track component source locations (file, line, column) for precise tracking
 
 #### 2.2.3 React Analyzer (`react-analyzer.ts`)
 ```typescript
@@ -125,6 +132,8 @@ interface ReactAnalyzer {
   detectDataSources(ast: ASTNode): DataSourceInfo[];
   detectStateManagement(ast: ASTNode): StateInfo[];
   collapseDuplicateNodes(nodes: NodeInfo[]): NodeInfo[];
+  extractEventHandlers(jsxElement: ASTNode): EventHandler[];
+  extractFunctionCallsFromHandler(handler: ASTNode): string[];
 }
 ```
 
@@ -133,11 +142,30 @@ interface ReactAnalyzer {
 - Find informative elements using specific AST patterns
 - Detect display elements: JSX elements with JSXExpressionContainer containing props/state data
 - Detect input elements: JSX elements with event handlers (onClick, onChange, onSubmit)
+- **Extract event handler details**: Parse event handler expressions to identify:
+  - Function references: `onClick={handleClick}` → extracts "handleClick"
+  - Arrow functions: `onClick={() => func1(); func2();}` → extracts ["func1", "func2"]
+  - Inline functions: `onClick={function() { doSomething(); }}` → extracts ["doSomething"]
+- **Track function calls in handlers**: Support multiple function calls per event handler for accurate data flow tracing
 - Detect data sources: CallExpression patterns for API calls
 - Detect state management: VariableDeclarator with useState patterns
 - Extract component props and state
 - Analyze component lifecycle and effects
 - Collapse duplicate nodes representing same logical concept
+
+**Event Handler Analysis Implementation:**
+- Extract event handler name (e.g., "onClick", "onChange")
+- Determine handler type (function-reference, arrow-function, function-expression)
+- Parse handler expression to find all function calls
+- Return structured EventHandler objects with full information
+- Enable edge creation from JSX elements → handler functions → APIs → database
+
+**Parent Component Tracking:**
+- Track component context during AST traversal (scope-based, not line-number-based)
+- Assign parentComponent to each JSX element during extraction
+- Enables accurate "contains" edges even with multiple components per file
+- Prevents cross-component edge contamination in files with multiple component definitions
+- Implementation: maintain `currentComponentName` variable during traversal, update when entering/exiting component definitions
 
 #### 2.2.4 Dependency Analyzer (`dependency-analyzer.ts`)
 ```typescript
@@ -153,16 +181,32 @@ interface DependencyAnalyzer {
 ```
 
 **Responsibilities:**
-- Build component dependency graphs
+- Build component dependency graphs at component-level granularity (not file-level)
 - Trace API calls from frontend to backend
 - Analyze service layer dependencies
 - Map database operations and schema usage
-- Create edges with direction from caller to callee, from data to database
-- Create edges with types {"calls", "reads", "writes to"}
+- **Create edges following UI → Database flow principle**:
+  - Component → Import (component depends on external library)
+  - Component → JSX Element with "contains" relationship (structural parent-child)
+  - Component A → Component B with "renders" relationship (component usage)
+  - **JSX Element → Function with "calls" relationship (event handler invocation)**
+  - **JSX Element → API with "calls" relationship (direct API call from handler)**
+  - Component → API with "calls" relationship
+  - API → Database with "reads" or "writes to" relationship
+- **External dependency handling**: Create one node per external package (not per import statement)
+- Edge types: {"imports", "calls", "renders", "contains", "reads", "writes to", "uses"}
+- **Event handler edge creation**:
+  - Parse event handler expressions (function references, arrow functions, inline functions)
+  - Extract all function calls within event handlers
+  - Create one edge per function call (supports multiple calls per handler)
+  - Edge properties include: eventType (onClick, onChange), handlerType, triggerMechanism (user-interaction)
+  - Enables complete user interaction flow tracing: User → Button → handleClick → validateInput → API → Database
 - Handle multiple outgoing edges for event handlers with multiple function calls
 - Handle multiple edges to multiple table nodes for single fetch operations
 - Normalize API endpoints with parameters (e.g., :clubid instead of specific IDs)
 - Detect circular dependencies and stop after second traversal
+- **Prevent self-referencing edges** to avoid infinite recursion in component rendering
+- Support same-file component usage (multiple components per file where one renders another)
 
 #### 2.2.5 Dead Code Detector (`dead-code-detector.ts`)
 ```typescript
@@ -391,6 +435,8 @@ interface NodeInfo {
   file: string;
   line?: number;
   column?: number;
+  codeOwnership: CodeOwnership; // Distinguishes custom code from external libraries
+  isInfrastructure?: boolean; // Flag for easy filtering of external dependencies
   properties: Record<string, any>;
 }
 
@@ -404,31 +450,64 @@ interface EdgeInfo {
 
 // Type Definitions
 type DataType = "array" | "list" | "integer" | "table" | "view" | string;
-type NodeType =  "function" | "API" | "table" | "view" | "route" | string;
-type NodeCategory = "front end" | "middleware" | "database";
-type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders";
+type NodeType =  "function" | "API" | "table" | "view" | "route" | "external-dependency" | string;
+type NodeCategory = "front end" | "middleware" | "database" | "library";
+type CodeOwnership = "internal" | "external"; // Enables filtering: internal = custom code, external = standard libraries
+type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains";
 
 ```
 
 #### 3.1.2 Component Types
 ```typescript
+interface ComponentDefinitionInfo {
+  name: string;
+  type: ComponentType;
+  file: string;
+  line?: number;
+  column?: number;
+  isExported: boolean;
+  extendsComponent?: string; // For class components
+}
+
 interface ComponentInfo {
   name: string;
   type: ComponentType;
   file: string;
+  line?: number;
+  column?: number;
   props: PropInfo[];
   state: StateInfo[];
   hooks: HookInfo[];
   children: ComponentInfo[];
   informativeElements: InformativeElement[];
+  renderLocations?: RenderLocation[]; // JSX instances stored as metadata, not separate nodes
+}
+
+interface RenderLocation {
+  file: string;
+  line: number;
+  context: string; // e.g., "ReactDOM.render", "JSX usage"
 }
 
 interface InformativeElement {
   type: ElementType;
   name: string;
   props: Record<string, any>;
-  eventHandlers: EventHandler[];
+  eventHandlers: EventHandler[]; // Full objects with handler analysis details
   dataBindings: DataBinding[];
+  parentComponent?: string; // Name of the component that contains this element (tracked via AST scope)
+}
+
+interface EventHandler {
+  name: string;        // Event name: "onClick", "onChange", "onSubmit"
+  type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
+  handler: string;     // Function(s) called: "handleClick" or "func1, func2, func3"
+}
+
+interface DataBinding {
+  source: string;      // Data source variable or prop
+  target: string;      // Target element or display location
+  type: string;        // Binding type
 }
 ```
 
@@ -687,6 +766,131 @@ chmod +x code2graph
 - **CI/CD Integration**: Automated analysis in build pipelines
 - **Monitoring**: Track analysis metrics and performance
 - **Alerting**: Notify on dead code detection or architecture issues
+
+---
+
+## 11. Graph Architecture Philosophy
+
+### 11.1 Custom Code Focus
+
+**Core Principle**: Code2Graph prioritizes detailed analysis of custom code while treating external libraries as black-box infrastructure.
+
+**Analogy**: Like a keyboard press analysis:
+- **What matters**: User presses 'b' → Letter 'b' appears on screen
+- **What's hidden**: Electronic contact → ASCII code → Windows interpretation → Graphics card → Pixel activation
+
+**Applied to React**:
+- **What matters**: MainComponent defined → Rendered at location → User clicks button → API called
+- **What's hidden**: React.Component internals → React rendering engine → Event system details
+
+### 11.2 Node Granularity Strategy
+
+#### 11.2.1 Custom Code (Internal)
+- **Component Level**: Each React component becomes a separate node (not file-level)
+- **Multiple per File**: Handle files with multiple component definitions
+- **Precise Tracking**: Line and column numbers for each component
+- **Rich Metadata**: Props, state, hooks, render locations
+
+#### 11.2.2 External Dependencies (Infrastructure)
+- **Package Level**: One node per external package (not per import statement)
+- **Minimal Detail**: Package name and version only
+- **Easy Filtering**: `isInfrastructure: true` flag for filtering
+- **Connection Points**: Show "Component depends on Package" without internal details
+
+**Example**:
+```json
+// Custom Code Node (detailed)
+{
+  "id": "node_1",
+  "label": "MainComponent",
+  "nodeType": "function",
+  "codeOwnership": "internal",
+  "line": 25,
+  "column": 0,
+  "properties": { "type": "class", "props": [...] }
+}
+
+// External Dependency Node (minimal)
+{
+  "id": "node_ext_1",
+  "label": "react",
+  "nodeType": "external-dependency",
+  "codeOwnership": "external",
+  "isInfrastructure": true,
+  "properties": { "packageName": "react", "version": "^18.0.0" }
+}
+```
+
+### 11.3 JSX Instance Handling
+
+**Decision**: JSX instances are **metadata on component definitions**, not separate nodes.
+
+**Rationale**:
+- JSX usage (`<MainComponent />`) indicates WHERE a component is rendered
+- Creating separate nodes creates duplication and confusion
+- Users care about entry points to UI, not JSX syntax details
+
+**Implementation**:
+```typescript
+interface ComponentInfo {
+  name: string;
+  renderLocations: RenderLocation[]; // Metadata, not nodes
+}
+```
+
+### 11.4 Edge Direction Philosophy
+
+**Principle**: All edges follow **UI → Database flow** for intuitive dependency tracing.
+
+**Edge Patterns**:
+```
+User Interface Layer:
+  Component --[contains]--> JSX Element (structural)
+  Component --[renders]--> Component (usage)
+  
+Dependency Layer:
+  Component --[imports]--> External Package (needs)
+  
+API Layer:
+  Component --[calls]--> API Endpoint (invokes)
+  
+Data Layer:
+  API --[reads/writes to]--> Database Table (data access)
+```
+
+**Rationale**: Enables questions like:
+- "What does MainComponent depend on?" (follow outgoing edges)
+- "What breaks if Hello is removed?" (trace incoming edges)
+- "How does user action reach database?" (traverse UI → Database)
+
+### 11.5 Relationship Types
+
+| Relationship | Source → Target | Semantics | Example |
+|--------------|-----------------|-----------|---------|
+| `contains` | Component → JSX Element | Structural parent-child | `MainComponent --[contains]--> <button>` |
+| `renders` | Component → Component | Component usage | `MainComponent --[renders]--> Hello` |
+| `imports` | Component → Package | Dependency on external library | `Hello --[imports]--> react` |
+| `calls` | Component → API | API invocation | `MainComponent --[calls]--> /api/users` |
+| `reads` | API → Table | Data read operation | `/api/users --[reads]--> users_table` |
+| `writes to` | API → Table | Data write operation | `/api/users --[writes to]--> users_table` |
+
+### 11.6 Filtering and Visualization
+
+**Default View**: Show all nodes with clear visual distinction
+- **Internal nodes**: Colored, detailed
+- **External nodes**: Grayed out, minimal
+
+**Filter Options**:
+```typescript
+// Show only custom code
+nodes.filter(n => n.codeOwnership === "internal")
+
+// Show only infrastructure
+nodes.filter(n => n.isInfrastructure === true)
+
+// Show everything (default)
+nodes // No filter
+```
 
 ---
 

@@ -239,17 +239,19 @@ export interface JSXElementInfo {
 /**
  * Informative element information
  * Elements that exchange internal data with users
+ * UPDATED (Phase A): Changed eventHandlers to EventHandler[] objects and added parentComponent tracking
  */
 export interface InformativeElementInfo {
   type: 'display' | 'input' | 'data-source' | 'state-management';
   name: string;
   elementType: string;
   props: Record<string, unknown>;
-  eventHandlers: string[];
+  eventHandlers: EventHandler[]; // UPDATED (Phase A): Now uses full EventHandler objects instead of strings
   dataBindings: string[];
   line?: number;
   column?: number;
   file: string;
+  parentComponent?: string; // NEW (Phase A): Name of the component that contains this element (tracked via AST scope)
 }
 
 /**
@@ -262,6 +264,7 @@ export interface ASTParser {
   extractExports(ast: ASTNode): ExportInfo[];
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[];
+  extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[];
   findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
   isInformativeElement(node: ASTNode): boolean;
   detectDisplayElements(ast: ASTNode): InformativeElementInfo[];
@@ -282,22 +285,34 @@ export type DataType = "array" | "list" | "integer" | "table" | "view" | string;
 
 /**
  * Node type definitions
+ * UPDATED (Phase A): Added "external-dependency" for external library nodes
  */
-export type NodeType = "function" | "API" | "table" | "view" | "route" | string;
+export type NodeType = "function" | "API" | "table" | "view" | "route" | "external-dependency" | string;
 
 /**
  * Node category definitions
+ * UPDATED (Phase A): Added "library" for external dependency nodes
  */
-export type NodeCategory = "front end" | "middleware" | "database";
+export type NodeCategory = "front end" | "middleware" | "database" | "library";
+
+/**
+ * Code ownership type definitions
+ * NEW (Phase A): Distinguishes custom code from external libraries
+ * - "internal": Custom code written by developers (analyzed in detail)
+ * - "external": Standard libraries and packages (treated as black-box infrastructure)
+ */
+export type CodeOwnership = "internal" | "external";
 
 /**
  * Relationship type definitions
+ * UPDATED (Phase A): Added "contains" for structural parent-child relationships
  */
-export type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders";
+export type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains";
 
 /**
  * Node information interface
  * Represents a node in the dependency graph
+ * UPDATED (Phase A): Added codeOwnership and isInfrastructure for custom code focus
  */
 export interface NodeInfo {
   id: string;
@@ -309,6 +324,8 @@ export interface NodeInfo {
   file: string;
   line?: number;
   column?: number;
+  codeOwnership: CodeOwnership; // NEW (Phase A): Distinguishes custom code ("internal") from external libraries ("external")
+  isInfrastructure?: boolean; // NEW (Phase A): Flag for easy filtering of external dependencies
   properties: Record<string, unknown>;
 }
 
@@ -356,13 +373,42 @@ export interface GraphMetadata {
 }
 
 /**
+ * Component definition information extracted from AST
+ * Phase 1: Represents individual component definitions found in files
+ * Used by AST parser to identify functional and class components
+ */
+export interface ComponentDefinitionInfo {
+  name: string;
+  type: ComponentType;
+  file: string;
+  line?: number;
+  column?: number;
+  isExported: boolean;
+  extendsComponent?: string; // For class components: "React.Component", "Component", etc.
+}
+
+/**
+ * Render location interface
+ * NEW (Phase A): Tracks where a component is rendered (JSX usage locations)
+ * Stores JSX instances as metadata on component definitions, not as separate nodes
+ */
+export interface RenderLocation {
+  file: string;
+  line: number;
+  context: string; // e.g., "ReactDOM.render", "JSX usage", "Used in ComponentName"
+}
+
+/**
  * Component information interface
  * Extended component information for dependency analysis
+ * UPDATED (Phase A): Added renderLocations to track JSX usage as metadata
  */
 export interface ComponentInfo {
   name: string;
   type: ComponentType;
   file: string;
+  line?: number;
+  column?: number;
   props: PropInfo[];
   state: StateInfo[];
   hooks: HookInfo[];
@@ -370,6 +416,7 @@ export interface ComponentInfo {
   informativeElements: InformativeElement[];
   imports: ImportInfo[];
   exports: ExportInfo[];
+  renderLocations?: RenderLocation[]; // NEW (Phase A): JSX usage locations stored as metadata, not separate nodes
 }
 
 /**
@@ -428,11 +475,13 @@ export type ElementType = "display" | "input" | "data-source" | "state-managemen
 
 /**
  * Event handler interface
+ * UPDATED (Phase A): Enhanced documentation for event handler analysis
+ * Used to track event handlers with detailed information about handler types and function calls
  */
 export interface EventHandler {
-  name: string;
-  type: string;
-  handler: string;
+  name: string;        // Event name: "onClick", "onChange", "onSubmit"
+  type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
+  handler: string;     // Function(s) called: "handleClick" or "validateInput, callAPI" for multiple calls
 }
 
 /**
