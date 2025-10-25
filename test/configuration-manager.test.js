@@ -222,7 +222,8 @@ describe('ConfigurationManager', () => {
       const merged = configManager.getMergedConfig();
 
       assert(merged.outputFormat === 'json'); // From global
-      assert(merged.outputPath === './graph-output.json'); // Default
+      // Updated default output path to match new directory structure and naming convention
+      assert(merged.outputPath === './graph-data-files/code2graph_<repo-name>.json'); // Default
       assert(merged.includePatterns.length === 2); // From global
       assert(merged.maxFileSize === 10485760); // From global
     });

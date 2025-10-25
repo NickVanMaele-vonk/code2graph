@@ -14,5 +14,5 @@
   },
   "branch": "",
   "commit": "",
-  "outputPath": "./graph-output.json"
+  "outputPath": "./graph-data-files/code2graph_<repo-name>.json"
 }

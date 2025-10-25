@@ -1,15 +1,19 @@
 # Code2Graph
 
-Code2Graph is a command-line tool that analyzes React/TypeScript codebases to create comprehensive dependency graphs on the level of individual front-end elements, functions, and database tables. 
+Code2Graph is a command-line tool that analyzes React/TypeScript codebases to create comprehensive dependency graphs at the level of individual front-end elements, functions, and database tables. 
 
+The input is a GitHub repository URL
 The output is a JSON file containing nodes and edges of a graph. 
-This serves as input for a graph visualisation tool. 
 
-In the graph, the top node is 'App-root'. 
+The output serves as input for a graph visualisation tool. 
+
+See later in this document how to install and use code2Graph.
+
+In the output graph, the top node is 'App-root'. 
 The next layers are UI elements, APIs, functions, etc. 
 The end nodes are database tables or data files. 
 
-Dead code shows up as nodes with no incoming edges. 
+Dead code (orphaned code) shows up as nodes with no incoming edges. 
 
 Initial focus: React / Typescript.
 More software languages to follow later. 
@@ -49,8 +53,6 @@ Details on DependencyAnalyzer
 ✅ API Endpoint Normalization (Converts specific IDs to parameters, e.g., to ':clubid' or ':userid')
 ✅ Comprehensive Unit Tests (test/dependency-analyser.test.js)
 ✅ CLI Integration (src/index.ts)
-
-
 
 **Phase 3 - React Component Analysis - Complete**: Traversing code and creating graph nodes
 3.1 Component Detection - COMPLETE (integrated into AST Parser)
@@ -161,6 +163,8 @@ Examples:
 # Analyze a repository with default settings
 node dist/index.js analyze https://github.com/user/repo
 
+## Example repo: node dist/index.js analyze https://github.com/tomm/react-typescript-helloworld
+
 # Analyze with custom output format and file
 node dist/index.js analyze https://github.com/user/repo -f json -o ./my-analysis.json
 
@@ -170,7 +174,7 @@ node dist/index.js analyze https://github.com/user/repo -b develop
 
 ### Command Options
 
-- `-o, --output <path>`: Output file path (default: ./graph-output.json)
+- `-o, --output <path>`: Output file path (default: ./graph-data-files/code2graph_<repo-name>.json)
 - `-f, --format <format>`: Output format: json, graphml, dot (default: json)
 - `-b, --branch <branch>`: Git branch to analyze
 - `--depth <depth>`: Git clone depth (default: 1)
@@ -237,6 +241,82 @@ ISC License - see LICENSE file for details.
 ---
 
 **Note**: This is Phase 2.1 implementation focusing on repository cloning. Additional analysis features will be implemented in subsequent phases.
+
+
+**Note**: Graph visualization tools are not part of code2graph but some open source options are listed below.  
+
+## Web based graph visualization solutions (No Installation Required)
+1. JSON Crack 
+URL: https://jsoncrack.eplus.dev/
+Best for: Quick visualization of your code2graph output
+Features:
+* Online tool, no installation needed
+* Supports JSON, YAML, XML, CSV
+* Interactive graph visualization
+* Export as images (PNG, JPG, SVG)
+* JSON validation and formatting
+
+2. JSON Visio
+URL: https://testdev.tools/json-visio/
+Best for: Simple, fast visualization
+Features:
+* Simple paste-and-visualize interface
+* No specific structure requirements
+* Instant graph generation
+
+3. JSON Flow (VS Code Extension)
+Installation: VS Code extension
+Best for: If you're already using VS Code
+Features:
+* Seamless VS Code integration
+* Multi-format support
+* Export capabilities
+
+## Advanced Graph Visualization Libraries
+4. Cytoscape.js (Most Suitable for Your Use Case)
+Type: JavaScript library
+Best for: Custom web-based visualization
+Features:
+* Specifically designed for network/graph visualization
+* Excellent for nodes and edges data
+* Highly customizable
+* Interactive features (zoom, pan, selection)
+* Works perfectly with your JSON structure
+
+5. D3.js
+Type: JavaScript library
+Best for: Custom implementations
+Features:
+* Most flexible visualization library
+* Complete control over rendering
+* Excellent for custom graph layouts
+
+6. Sigma.js
+Type: JavaScript library
+Best for: Large codebases
+Features:
+* Specialized for large graph visualization
+* WebGL rendering for performance
+* Good for complex networks
+
+## Desktop Graph Visualization Applications
+7. Gephi
+Type: Desktop application
+Best for: Deep analysis and research
+Features:
+* Professional network analysis
+* Advanced layout algorithms
+* Statistical analysis
+* Import/export capabilities
+
+8. Graphviz
+Type: Command-line tool
+Best for: Automated graph generation
+Features:
+* Automatic graph layout
+* Multiple output formats
+* Scriptable
+
 
 
 ### author: Nick Van Maele
