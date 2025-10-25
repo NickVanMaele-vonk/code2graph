@@ -12,6 +12,7 @@ import { ASTParserImpl } from './analyzers/ast-parser.js';
 import { DependencyAnalyzerImpl } from './analyzers/dependency-analyser.js';
 import { JSONGeneratorImpl } from './generators/json-generator.js';
 import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo, DependencyGraph } from './types/index.js';
+import { generateOutputPath, generateDeadCodeReportPath } from './utils/url-utils.js';
 
 /**
  * Main CLI class
@@ -54,12 +55,17 @@ class Code2GraphCLI {
       .command('analyze')
       .description('Analyze a repository for code dependencies and dead code')
       .argument('<repo-url>', 'GitHub repository URL to analyze')
-      .option('-o, --output <path>', 'Output file path', './graph-output.json')
+      .option('-o, --output <path>', 'Output file path (default: ./graph-data-files/code2graph_<repo-name>.json)')
       .option('-f, --format <format>', 'Output format (json|graphml|dot)', 'json')
       .option('-b, --branch <branch>', 'Git branch to analyze')
       .option('--depth <depth>', 'Git clone depth', '1')
       .option('--timeout <ms>', 'Clone timeout in milliseconds', '300000')
       .action(async (repoUrl: string, options: CLIAnalysisOptions) => {
+        // Generate default output path based on repository URL if not provided
+        // This ensures the output file has a meaningful name based on the repo
+        if (!options.output) {
+          options.output = generateOutputPath(repoUrl);
+        }
         await this.analyzeRepository(repoUrl, options);
       });
 
@@ -231,7 +237,7 @@ COMMANDS:
   version    Show version information
 
 OPTIONS:
-  -o, --output <path>    Output file path (default: ./graph-output.json)
+  -o, --output <path>    Output file path (default: ./graph-data-files/code2graph_<repo-name>.json)
   -f, --format <format>  Output format: json, graphml, dot (default: json)
   -b, --branch <branch>  Git branch to analyze
   --depth <depth>        Git clone depth (default: 1)
@@ -393,11 +399,11 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
 
     // Log summary
     console.log(`✅ AST Analysis completed:`);
-    console.log(`   📥 Total imports: ${totalImports}`);
-    console.log(`   📤 Total exports: ${totalExports}`);
-    console.log(`   🎨 Total JSX elements: ${totalJSXElements}`);
-    console.log(`   💡 Total informative elements: ${totalInformativeElements}`);
-    console.log(`   ❌ Parse errors: ${parseErrors}`);
+    console.log(`   Total imports: ${totalImports}`);
+    console.log(`   Total exports: ${totalExports}`);
+    console.log(`   Total JSX elements: ${totalJSXElements}`);
+    console.log(`   Total informative elements: ${totalInformativeElements}`);
+    console.log(`   Parse errors: ${parseErrors}`);
 
     await this.logger.logInfo('AST analysis summary', {
       filesAnalyzed: typescriptFiles.length,
@@ -543,7 +549,9 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
         }));
 
       if (deadCodeItems.length > 0) {
-        const deadCodeReportPath = outputPath.replace(/\.json$/, '-dead-code-report.json');
+        // Generate dead code report path based on repository URL
+        // This ensures consistent naming convention for both main output and dead code report
+        const deadCodeReportPath = generateDeadCodeReportPath(repositoryUrl);
         const deadCodeReport = this.jsonGenerator.generateDeadCodeReport(deadCodeItems, repositoryUrl);
         await this.jsonGenerator.exportToFile(deadCodeReport, deadCodeReportPath);
         

@@ -140,7 +140,9 @@ export class ConfigurationManager {
       outputFormat: (typeof globalConfig.defaultOutputFormat === 'string' && ['json', 'graphml', 'dot'].includes(globalConfig.defaultOutputFormat)) 
         ? globalConfig.defaultOutputFormat as 'json' | 'graphml' | 'dot' 
         : 'json',
-      outputPath: './graph-output.json'
+      // Updated default output path to use the new directory structure
+      // The actual path will be generated dynamically based on the repository URL in the CLI
+      outputPath: './graph-data-files/code2graph_<repo-name>.json'
     };
 
     // Override with repository-specific settings if available
@@ -362,7 +364,8 @@ export class ConfigurationManager {
       },
       branch: "",
       commit: "",
-      outputPath: "./graph-output.json"
+      // Updated default output path to use the new directory structure and naming convention
+      outputPath: "./graph-data-files/code2graph_<repo-name>.json"
     };
 
     await fsBuiltin.writeFile(outputPath, JSON.stringify(template, null, 2));
