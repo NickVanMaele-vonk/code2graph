@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": "2025-10-25T18:36:21.713Z",
+  "timestamp": "2025-10-27T17:57:09.604Z",
   "repositoryUrl": "",
   "analysisScope": {
     "includedTypes": [
@@ -15,10 +15,10 @@
   },
   "statistics": {
     "linesOfCode": 0,
-    "totalNodes": 8,
-    "totalEdges": 4,
+    "totalNodes": 6,
+    "totalEdges": 6,
     "deadCodeNodes": 0,
-    "liveCodeNodes": 8,
+    "liveCodeNodes": 6,
     "deadCodePercentage": 0
   },
   "graph": {
@@ -30,7 +30,7 @@
         "nodeCategory": "front end",
         "datatype": "array",
         "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\src\\components\\Hello.tsx",
+        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761587826708\\src\\components\\Hello.tsx",
         "line": 5,
         "column": 13,
         "codeOwnership": "internal",
@@ -43,31 +43,12 @@
       },
       {
         "id": "node_2",
-        "label": "h1",
-        "nodeType": "function",
-        "nodeCategory": "front end",
-        "datatype": "array",
-        "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\src\\components\\Hello.tsx",
-        "codeOwnership": "internal",
-        "properties": {
-          "elementType": "display",
-          "props": {},
-          "eventHandlers": [],
-          "dataBindings": [
-            "expression",
-            "expression"
-          ]
-        }
-      },
-      {
-        "id": "node_3",
         "label": "MainComponent",
         "nodeType": "function",
         "nodeCategory": "front end",
         "datatype": "array",
         "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\src\\index.tsx",
+        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761587826708\\src\\index.tsx",
         "line": 9,
         "column": 0,
         "codeOwnership": "internal",
@@ -79,31 +60,13 @@
         }
       },
       {
-        "id": "node_4",
-        "label": "p",
-        "nodeType": "function",
-        "nodeCategory": "front end",
-        "datatype": "array",
-        "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\src\\index.tsx",
-        "codeOwnership": "internal",
-        "properties": {
-          "elementType": "display",
-          "props": {},
-          "eventHandlers": [],
-          "dataBindings": [
-            "expression"
-          ]
-        }
-      },
-      {
-        "id": "node_5",
+        "id": "node_3",
         "label": "button",
         "nodeType": "function",
         "nodeCategory": "front end",
         "datatype": "array",
         "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\src\\index.tsx",
+        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761587826708\\src\\index.tsx",
         "codeOwnership": "internal",
         "properties": {
           "elementType": "input",
@@ -111,31 +74,36 @@
             "onClick": "expression"
           },
           "eventHandlers": [
-            "onClick"
+            {
+              "name": "onClick",
+              "type": "method-reference",
+              "handler": "increment"
+            }
           ],
           "dataBindings": [
             "onClick"
-          ]
+          ],
+          "parentComponent": "MainComponent"
         }
       },
       {
-        "id": "node_6",
-        "label": "webpack.config",
+        "id": "node_4",
+        "label": "increment",
         "nodeType": "function",
         "nodeCategory": "front end",
         "datatype": "array",
         "liveCodeScore": 100,
-        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761417379328\\webpack.config.js",
+        "file": "C:\\Users\\NickVanMaele\\OneDrive - Vonk\\github\\code2graph\\cloned-repos\\tomm-react-typescript-helloworld-1761587826708\\src\\index.tsx",
         "codeOwnership": "internal",
         "properties": {
-          "type": "functional",
-          "props": [],
-          "state": [],
-          "hooks": []
+          "isEventHandler": true,
+          "parentComponent": "MainComponent",
+          "eventType": "onClick",
+          "handlerType": "method-reference"
         }
       },
       {
-        "id": "node_7",
+        "id": "node_5",
         "label": "react",
         "nodeType": "external-dependency",
         "nodeCategory": "library",
@@ -150,7 +118,7 @@
         }
       },
       {
-        "id": "node_8",
+        "id": "node_6",
         "label": "react-dom",
         "nodeType": "external-dependency",
         "nodeCategory": "library",
@@ -169,7 +137,7 @@
       {
         "id": "edge_1",
         "source": "node_1",
-        "target": "node_7",
+        "target": "node_5",
         "relationship": "imports",
         "properties": {
           "importType": "external",
@@ -179,8 +147,8 @@
       },
       {
         "id": "edge_2",
-        "source": "node_3",
-        "target": "node_7",
+        "source": "node_2",
+        "target": "node_5",
         "relationship": "imports",
         "properties": {
           "importType": "external",
@@ -190,8 +158,8 @@
       },
       {
         "id": "edge_3",
-        "source": "node_3",
-        "target": "node_8",
+        "source": "node_2",
+        "target": "node_6",
         "relationship": "imports",
         "properties": {
           "importType": "external",
@@ -201,12 +169,36 @@
       },
       {
         "id": "edge_4",
-        "source": "node_3",
+        "source": "node_2",
         "target": "node_1",
         "relationship": "imports",
         "properties": {
           "importType": "internal",
           "importSource": "./components/Hello"
+        }
+      },
+      {
+        "id": "edge_5",
+        "source": "node_2",
+        "target": "node_3",
+        "relationship": "contains",
+        "properties": {
+          "elementType": "input",
+          "elementName": "button",
+          "parentComponent": "MainComponent"
+        }
+      },
+      {
+        "id": "edge_6",
+        "source": "node_3",
+        "target": "node_4",
+        "relationship": "calls",
+        "properties": {
+          "eventType": "onClick",
+          "handlerType": "method-reference",
+          "triggerMechanism": "user-interaction",
+          "elementName": "button",
+          "handlerName": "increment"
         }
       }
     ]

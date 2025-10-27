@@ -795,6 +795,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
 
       // Phase F: Filter component usage - don't create duplicate nodes
       // Phase G: Keep informative elements that have event handlers or data bindings
+      // Phase H: Filter out non-interactive HTML formatting elements
       for (const element of component.informativeElements) {
         // Phase F: Check if this element is a component usage (capitalized name)
         const isComponentUsage = this.isElementNameComponentUsage(element.name);
@@ -826,6 +827,22 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
             }
           }
           // Skip node creation for component usage
+          continue;
+        }
+        
+        // Phase H: Filter out non-interactive HTML formatting elements
+        // Business Logic: Only create nodes for elements that represent functional units or interaction points
+        // Elements like h1, p, div without handlers are just DOM structure, not business logic
+        // This reduces graph noise and focuses on meaningful data flow
+        if (!this.shouldCreateNodeForElement(element)) {
+          if (this.logger) {
+            this.logger.logInfo('Phase H: Skipping passive HTML formatting element', {
+              elementName: element.name,
+              elementType: element.type,
+              component: component.name,
+              reason: 'No event handlers and is formatting element'
+            });
+          }
           continue;
         }
         
@@ -1086,8 +1103,17 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       properties: {
         elementType: element.type,
         props: element.props,
-        eventHandlers: element.eventHandlers.map((h: { name: string }) => h.name),
-        dataBindings: element.dataBindings // Phase G: Already string[], no need to map (was incorrectly treating as DataBinding[])
+        // Phase G Fix: Preserve full EventHandler objects for edge creation
+        // The createEventHandlerEdges method needs access to handler.name, handler.type, and handler.handler
+        // Converting to strings destroys the handler function name (handler.handler property), breaking edge creation
+        // Context: button onClick={increment} needs edge button --calls--> increment function
+        eventHandlers: element.eventHandlers, // Keep full EventHandler objects: { name, type, handler }
+        dataBindings: element.dataBindings, // Phase G: Already string[], no need to map (was incorrectly treating as DataBinding[])
+        // Phase G Fix (Part 2): Copy parentComponent for edge creation
+        // The createEventHandlerEdges and createContainsEdges methods need parentComponent to match elements to components
+        // Without this, edges cannot be created because the edge creation logic cannot find the parent component
+        // Context: button needs parentComponent="MainComponent" to create edges MainComponent→button and button→increment
+        parentComponent: element.parentComponent // Track which component contains this element
       }
     };
   }
@@ -1320,6 +1346,82 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const isCapitalized = firstChar === firstChar.toUpperCase() && firstChar !== firstChar.toLowerCase();
     
     return isCapitalized;
+  }
+
+  /**
+   * Phase H: Determines if a JSX element should become a graph node
+   * Filters out non-interactive HTML formatting elements to reduce graph noise
+   * 
+   * Business Logic (per PRD §3.1.2):
+   * - "Informative elements" capture user input or display database data
+   * - "Labels and non-interactive elements are NOT informative"
+   * - Elements with event handlers ARE nodes (capture user interaction)
+   * - Data sources ARE nodes (API calls, fetch operations)
+   * - HTML formatting tags WITHOUT handlers are NOT nodes (visual noise)
+   * 
+   * Context:
+   * This implements the filtering requirement from the critique: "h1 and p are not interesting
+   * since they are HTML formatting commands that have nothing to do with user interactions
+   * or data flows in the application."
+   * 
+   * Implementation Strategy:
+   * - Interactive elements (button with onClick) → Create node
+   * - Data sources (API calls) → Create node
+   * - Passive formatting elements (h1, p, div without handlers) → Skip node creation
+   * 
+   * Examples:
+   * - shouldCreateNodeForElement(button with onClick) → true (interactive)
+   * - shouldCreateNodeForElement(h1 with text) → false (passive formatting)
+   * - shouldCreateNodeForElement(fetch call) → true (data source)
+   * 
+   * @param element - Informative element to check
+   * @returns boolean - True if element should become a node, false to skip
+   */
+  private shouldCreateNodeForElement(element: InformativeElementInfo): boolean {
+    // Always create nodes for elements with event handlers
+    // These capture user interactions and trigger business logic
+    // Example: <button onClick={handleClick}> should become a node
+    if (element.eventHandlers && element.eventHandlers.length > 0) {
+      return true;
+    }
+    
+    // Always create nodes for data sources (API calls, fetch operations)
+    // These represent data flow from external sources
+    // Example: fetch('/api/users') should become a node
+    if (element.type === 'data-source') {
+      return true;
+    }
+    
+    // Always create nodes for state management
+    // These represent state changes and data flow within the application
+    // Example: useState, useReducer should become nodes
+    if (element.type === 'state-management') {
+      return true;
+    }
+    
+    // Filter out common HTML formatting elements without handlers
+    // These are just DOM structure/styling, not functional units
+    // They don't help understand business logic or data flow
+    const formattingElements = [
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',  // Headings
+      'p', 'span', 'label',                 // Text elements
+      'div', 'section', 'article',          // Layout containers
+      'header', 'footer', 'nav',            // Semantic containers
+      'ul', 'ol', 'li',                     // Lists
+      'strong', 'em', 'i', 'b',             // Text styling
+      'a'                                    // Links (without handlers)
+    ];
+    
+    const elementNameLower = element.name.toLowerCase();
+    if (formattingElements.includes(elementNameLower)) {
+      // This is a formatting element without handlers - skip it
+      return false;
+    }
+    
+    // Keep everything else (custom elements, input fields, complex structures)
+    // This includes: input, select, textarea, button (all typically have handlers)
+    // But if they don't have handlers, they would have been caught by the handler check above
+    return true;
   }
 
   /**

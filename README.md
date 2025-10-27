@@ -40,6 +40,26 @@ In the output graph, the top node is 'App-root'.
 The next layers are UI elements, APIs, functions, etc. 
 The end nodes are database tables or data files. 
 
+**Graph Filtering Philosophy:**
+Code2Graph focuses on **business logic and user interactions** by filtering out visual noise:
+- ✅ **Interactive elements WITH event handlers** become nodes (e.g., `<button onClick={...}>`)
+- ✅ **Data sources (API calls)** become nodes
+- ✅ **State management (useState)** becomes nodes
+- ❌ **Passive HTML formatting elements WITHOUT handlers** are filtered out (e.g., `<div>{data}</div>`, `<h1>{title}</h1>`, `<p>{text}</p>`)
+- **Rationale**: Reduces graph complexity and focuses on what matters for understanding code flow and dependencies
+
+**Node Creation Rules:**
+
+| Element Type | Has Event Handler? | Becomes Node? | Reason |
+|--------------|-------------------|---------------|---------|
+| `<button onClick={...}>` | ✅ Yes | ✅ **Yes** | User interaction point |
+| `<input onChange={...}>` | ✅ Yes | ✅ **Yes** | User input capture |
+| `<div>{data}</div>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `<h1>{title}</h1>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `<p>{text}</p>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `fetch('/api/users')` | N/A | ✅ **Yes** | Data source |
+| `useState(0)` | N/A | ✅ **Yes** | State management |
+
 Dead code (orphaned code) shows up as nodes with no incoming edges. 
 
 Initial focus: React / Typescript.
@@ -190,7 +210,8 @@ Examples:
 # Analyze a repository with default settings
 node dist/index.js analyze https://github.com/user/repo
 
-## Example repo: node dist/index.js analyze https://github.com/tomm/react-typescript-helloworld
+## Example command: 
+## node dist/index.js analyze https://github.com/tomm/react-typescript-helloworld
 
 # Analyze with custom output format and file
 node dist/index.js analyze https://github.com/user/repo -f json -o ./my-analysis.json

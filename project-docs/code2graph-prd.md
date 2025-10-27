@@ -70,15 +70,20 @@ A specialized tool that:
   - Note: Labels and non-interactive elements are not considered informative
 - **Programmatic identification**: Analyze AST using @babel/parser to identify:
   - **Primary AST Node Types**: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
-  - **Display Elements**: JSX elements with JSXExpressionContainer containing props/state data
-  - **Input Elements**: JSX elements with event handlers (onClick, onChange, onSubmit)
+  - **Interactive Elements** (CREATE nodes): JSX elements with event handlers (onClick, onChange, onSubmit) that capture user interactions
+  - **Display Elements** (SKIP nodes): Passive HTML formatting elements (div, h1, p, span, etc.) without event handlers are filtered out to reduce graph noise, even if they contain data bindings
   - **Event Handler Analysis**: Extract function calls from event handlers:
     - Function references: `onClick={handleClick}` → identifies "handleClick" as target function
     - Arrow functions: `onClick={() => { func1(); func2(); }}` → identifies ["func1", "func2"] as targets
     - Inline functions: `onClick={function() { doSomething(); }}` → identifies ["doSomething"] as target
     - Multiple calls per handler supported for complete data flow tracking
-  - **Data Sources**: CallExpression patterns for API calls
-  - **State Management**: VariableDeclarator with useState patterns
+  - **Data Sources** (CREATE nodes): CallExpression patterns for API calls
+  - **State Management** (CREATE nodes): VariableDeclarator with useState patterns
+  - **Filtering Strategy**: Only create nodes for JSX elements that have:
+    1. Event handlers (user interaction points), OR
+    2. Are data sources (API calls), OR
+    3. Are state management (useState)
+    - Skip passive HTML formatting elements (div, h1, p, span, label, etc.) that only display data without handlers
   - **Node Creation Rules**: Imported components become nodes if used; data arrays/variables become nodes; functions handling data/interaction become nodes; API endpoints normalized with parameters (e.g., :clubid); database tables/views become nodes; conditionally rendered components become nodes; JSX fragments analyzed same as regular JSX
   - **Node Collapse Logic**: Multiple nodes representing same data collapse into one if they lead to same database table
   - **Naming Conventions**: Use import alias for components; use array variable name for data arrays; use function name for functions; use parameterized form for API endpoints

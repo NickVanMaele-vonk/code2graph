@@ -966,18 +966,19 @@ describe('Dependency Analyzer', () => {
     });
 
     /**
-     * Phase G (Solution 2B/2C): Test informative element nodes and handler function nodes
+     * Phase H: Test filtering of non-interactive HTML formatting elements
      * 
      * Business Logic:
-     * Informative elements (HTML elements with handlers/bindings) ARE nodes because they're interaction points.
-     * Handler functions (increment, handleClick) also become nodes.
-     * This enables user interaction flow edges: button --calls--> increment
+     * Phase H filters out passive HTML formatting elements (div, h1, p, span, etc.) 
+     * that have no event handlers. Only interactive elements with handlers become nodes.
+     * This reduces graph noise and focuses on business logic and user interactions.
      * 
      * Test validates:
-     * - Informative HTML elements (with handlers) DO create nodes
+     * - Interactive HTML elements (with handlers) DO create nodes (button with onClick)
+     * - Passive HTML formatting elements (without handlers) do NOT create nodes (div with only data binding)
      * - Handler functions create separate nodes
      * - Components create nodes
-     * - Enables complete interaction flow visualization
+     * - Enables complete interaction flow visualization without visual clutter
      */
     it('should create nodes for informative HTML elements and handler functions', () => {
       const components = [
@@ -991,7 +992,7 @@ describe('Dependency Analyzer', () => {
           children: [],
           informativeElements: [
             { 
-              name: 'button', // HTML element (lowercase)
+              name: 'button', // HTML element with handler → CREATE node
               type: 'input',
               elementType: 'JSXElement',
               props: {},
@@ -1001,7 +1002,7 @@ describe('Dependency Analyzer', () => {
               file: '/app/component.tsx'
             },
             { 
-              name: 'div', // HTML element (lowercase)
+              name: 'div', // HTML formatting element without handler → SKIP node (Phase H)
               type: 'display',
               elementType: 'JSXElement',
               props: {},
@@ -1018,14 +1019,14 @@ describe('Dependency Analyzer', () => {
 
       const graph = analyzer.buildDependencyGraph(components);
       
-      // Phase G: HTML elements with handlers/bindings ARE nodes (interaction points)
+      // Phase H: Only interactive elements with handlers become nodes
       const buttonNode = graph.nodes.find(n => n.label === 'button');
       const divNode = graph.nodes.find(n => n.label === 'div');
       const componentNode = graph.nodes.find(n => n.label === 'MyComponent');
       const handleClickNode = graph.nodes.find(n => n.label === 'handleClick');
       
       assert.ok(buttonNode, 'Should create node for button (has onClick handler)');
-      assert.ok(divNode, 'Should create node for div (has data binding)');
+      assert.ok(!divNode, 'Should NOT create node for div (passive display without handlers - Phase H filtering)');
       assert.ok(componentNode, 'Should create node for MyComponent');
       assert.ok(handleClickNode, 'Should create node for handleClick (handler function)');
       
@@ -1033,9 +1034,10 @@ describe('Dependency Analyzer', () => {
       assert.strictEqual(handleClickNode.properties.isEventHandler, true, 'Handler node should be marked as event handler');
       assert.strictEqual(handleClickNode.properties.parentComponent, 'MyComponent', 'Handler should belong to MyComponent');
       
-      // Internal nodes: component + 2 informative elements + 1 handler function = 4
+      // Phase H: Internal nodes = component + 1 interactive element (button) + 1 handler function = 3
+      // The div is filtered out because it's a passive formatting element
       const internalNodes = graph.nodes.filter(n => n.codeOwnership === 'internal');
-      assert.ok(internalNodes.length >= 3, 'Should have at least component + informative elements + handler');
+      assert.strictEqual(internalNodes.length, 3, 'Should have component + button + handler (div filtered out)');
     });
 
     it('should handle mixed HTML elements and component usage in same file', () => {
@@ -1050,7 +1052,7 @@ describe('Dependency Analyzer', () => {
           children: [],
           informativeElements: [
             { 
-              name: 'button', // HTML element → create node
+              name: 'button', // HTML element with handler → CREATE node (Phase H)
               type: 'input',
               elementType: 'JSXElement',
               props: {},
@@ -1060,7 +1062,7 @@ describe('Dependency Analyzer', () => {
               file: '/app/parent.tsx'
             },
             { 
-              name: 'ChildComponent', // Component usage → metadata only
+              name: 'ChildComponent', // Component usage → metadata only (Phase F)
               type: 'display',
               elementType: 'JSXElement',
               props: {},
@@ -1070,7 +1072,7 @@ describe('Dependency Analyzer', () => {
               file: '/app/parent.tsx'
             },
             { 
-              name: 'div', // HTML element → create node
+              name: 'div', // HTML formatting element without handler → SKIP node (Phase H)
               type: 'display',
               elementType: 'JSXElement',
               props: {},
@@ -1099,17 +1101,17 @@ describe('Dependency Analyzer', () => {
 
       const graph = analyzer.buildDependencyGraph(components);
       
-      // HTML elements should create nodes
+      // Phase H: Only interactive HTML elements with handlers create nodes
       const buttonNode = graph.nodes.find(n => n.label === 'button');
       const divNode = graph.nodes.find(n => n.label === 'div');
-      assert.ok(buttonNode, 'Should create node for button');
-      assert.ok(divNode, 'Should create node for div');
+      assert.ok(buttonNode, 'Should create node for button (has event handler)');
+      assert.ok(!divNode, 'Should NOT create node for div (passive formatting without handlers - Phase H filtering)');
       
-      // Component usage should NOT create duplicate node
+      // Phase F: Component usage should NOT create duplicate node
       const childComponentNodes = graph.nodes.filter(n => n.label === 'ChildComponent');
       assert.strictEqual(childComponentNodes.length, 1, 'Should only have one ChildComponent node (definition only)');
       
-      // ChildComponent should have renderLocations metadata
+      // Phase F: ChildComponent should have renderLocations metadata
       const childComponent = components.find(c => c.name === 'ChildComponent');
       assert.ok(childComponent.renderLocations, 'ChildComponent should have renderLocations');
       assert.strictEqual(childComponent.renderLocations.length, 1, 'Should record one usage location');
