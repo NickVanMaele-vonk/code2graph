@@ -18,8 +18,11 @@ function initializeCytoscape() {
                 style: {
                     'background-color': '#666',
                     'label': 'data(label)',
-                    'width': 'mapData(degree, 0, 20, 20, 100)',
-                    'height': 'mapData(degree, 0, 20, 20, 100)',
+                    // Node sizes are now calculated programmatically based on degree
+                    // and adjusted on zoom to maintain constant screen size
+                    // Default size is set here and will be overridden after nodes are added
+                    'width': 40,
+                    'height': 40,
                     
                     // Label positioning: Place labels to the right of nodes, not inside
                     // This prevents text overflow when labels are too long for node size
@@ -77,6 +80,11 @@ function initializeCytoscape() {
     // This ensures labels don't become too large when zooming in
     // Combined with min-zoomed-font-size, this creates reasonable bounds on label size
     setupZoomIndependentLabels();
+    
+    // Setup zoom-independent node sizing
+    // This keeps node icons at constant screen size when zooming, reducing visual clutter
+    // while still allowing distances between nodes to change naturally
+    setupZoomIndependentNodeSizes();
 }
 
 /**
@@ -116,6 +124,83 @@ function setupZoomIndependentLabels() {
                 .update();
         }
     });
+}
+
+/**
+ * Setup zoom event handler for keeping node sizes constant on screen
+ * Business Logic: Prevents node icons from growing/shrinking when users zoom
+ * 
+ * Context: By default, Cytoscape scales node sizes with zoom level, which clutters the screen
+ * when zooming in without adding value. This function keeps node icon sizes constant while
+ * still allowing distances between nodes to change naturally with zoom.
+ * 
+ * Implementation Strategy:
+ * - Store each node's base size as a data attribute when nodes are created
+ * - On zoom events, calculate adjusted size: adjustedSize = baseSize / zoomLevel
+ * - This inverse relationship keeps rendered size constant on screen
+ * - Distances between nodes still increase/decrease naturally with zoom
+ * 
+ * Result: Node icons stay at constant screen size regardless of zoom level, reducing visual
+ * clutter while maintaining spatial relationship clarity.
+ */
+function setupZoomIndependentNodeSizes() {
+    cy.on('zoom', function() {
+        const zoomLevel = cy.zoom();
+        
+        // Iterate through all nodes and adjust their size inversely to zoom level
+        // This keeps the rendered size constant on screen
+        cy.nodes().forEach(function(node) {
+            // Get the base size stored when the node was created
+            // Base size is calculated from node degree (number of connections)
+            const baseWidth = node.data('baseWidth');
+            const baseHeight = node.data('baseHeight');
+            
+            // Calculate adjusted size: inverse of zoom level
+            // When zoom increases (zoom in), we decrease the size proportionally
+            // When zoom decreases (zoom out), we increase the size proportionally
+            // Result: constant screen size regardless of zoom level
+            const adjustedWidth = baseWidth / zoomLevel;
+            const adjustedHeight = baseHeight / zoomLevel;
+            
+            // Apply the adjusted sizes to the node
+            // This overrides Cytoscape's default zoom scaling behavior for node sizes
+            node.style({
+                'width': adjustedWidth,
+                'height': adjustedHeight
+            });
+        });
+    });
+}
+
+/**
+ * Calculate and store base node sizes based on node degree
+ * Business Logic: Node size reflects importance (number of connections)
+ * 
+ * Context: Nodes are sized based on their degree (number of connections) to visually
+ * indicate their importance in the dependency graph. This function calculates and stores
+ * these base sizes so they can be used for zoom-independent sizing.
+ * 
+ * @param {Object} node - Cytoscape node object
+ */
+function calculateAndStoreBaseSize(node) {
+    // Get node degree (number of connections)
+    const degree = node.degree();
+    
+    // Map degree to size range: 0-20 connections → 20-100 pixels
+    // This matches the original Cytoscape mapData configuration
+    const minDegree = 0;
+    const maxDegree = 20;
+    const minSize = 20;
+    const maxSize = 100;
+    
+    // Linear interpolation formula: size = minSize + (degree - minDegree) * (maxSize - minSize) / (maxDegree - minDegree)
+    // Clamp degree to [minDegree, maxDegree] range to prevent oversized nodes
+    const clampedDegree = Math.min(Math.max(degree, minDegree), maxDegree);
+    const baseSize = minSize + (clampedDegree - minDegree) * (maxSize - minSize) / (maxDegree - minDegree);
+    
+    // Store base sizes as node data attributes for use in zoom handler
+    node.data('baseWidth', baseSize);
+    node.data('baseHeight', baseSize);
 }
 
 /**
@@ -177,6 +262,13 @@ function loadGraph(data) {
     
     // Add new elements
     cy.add(elements);
+    
+    // Calculate and store base sizes for all nodes
+    // This must be done after nodes are added and before layout runs
+    // Base sizes are needed for zoom-independent node sizing
+    cy.nodes().forEach(function(node) {
+        calculateAndStoreBaseSize(node);
+    });
     
     // Apply layout
     cy.layout({
@@ -427,14 +519,28 @@ document.querySelectorAll('.node-filter').forEach(checkbox => {
 
 /**
  * Handle layout selection
+ * Business Logic: Allow users to choose different graph layouts for better visualization
+ * Context: Recalculate base sizes after layout changes to ensure proper node sizing
  */
 document.getElementById('layoutSelect').addEventListener('change', (event) => {
     const layoutName = event.target.value;
-    cy.layout({
+    
+    // Apply the new layout
+    const layout = cy.layout({
         name: layoutName,
         fit: true,
         padding: 30
-    }).run();
+    });
+    
+    // Recalculate base sizes after layout completes
+    // This ensures nodes maintain zoom-independent sizing after layout changes
+    layout.on('layoutstop', function() {
+        cy.nodes().forEach(function(node) {
+            calculateAndStoreBaseSize(node);
+        });
+    });
+    
+    layout.run();
 });
 
 /**

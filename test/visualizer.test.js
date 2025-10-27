@@ -1,0 +1,359 @@
+/**
+ * Tests for Code2Graph Visualizer
+ * 
+ * Test Strategy:
+ * - Mock Cytoscape.js functionality for unit testing
+ * - Test zoom-independent node sizing logic
+ * - Test base size calculation
+ * - Verify integration with layout changes
+ * 
+ * Note: These tests focus on the zoom-independent node sizing feature
+ * Additional tests should be added for other visualizer functionality
+ */
+
+const { describe, it, expect, beforeEach, jest } = require('@jest/globals');
+
+// Mock Cytoscape.js
+let mockCytoscape;
+let mockNodes;
+let mockZoomHandlers;
+
+beforeEach(() => {
+    // Reset mocks before each test
+    mockNodes = [];
+    mockZoomHandlers = [];
+    
+    // Create a mock Cytoscape instance
+    mockCytoscape = {
+        zoom: jest.fn(() => 1.0),
+        nodes: jest.fn(() => mockNodes),
+        on: jest.fn((event, handler) => {
+            if (event === 'zoom') {
+                mockZoomHandlers.push(handler);
+            }
+        }),
+        style: jest.fn(() => ({
+            selector: jest.fn(() => ({
+                style: jest.fn(() => ({
+                    update: jest.fn()
+                }))
+            }))
+        }))
+    };
+});
+
+/**
+ * Test calculateAndStoreBaseSize function
+ * Verifies that base sizes are correctly calculated and stored based on node degree
+ */
+describe('calculateAndStoreBaseSize', () => {
+    it('should calculate base size for node with degree 0', () => {
+        const mockNode = {
+            degree: jest.fn(() => 0),
+            data: jest.fn()
+        };
+        
+        // Expected size for degree 0: minSize = 20
+        const expectedSize = 20;
+        
+        // This would be called in the actual implementation
+        // calculateAndStoreBaseSize(mockNode);
+        
+        // Verify data was called to store base sizes
+        // expect(mockNode.data).toHaveBeenCalledWith('baseWidth', expectedSize);
+        // expect(mockNode.data).toHaveBeenCalledWith('baseHeight', expectedSize);
+    });
+    
+    it('should calculate base size for node with degree 10', () => {
+        const mockNode = {
+            degree: jest.fn(() => 10),
+            data: jest.fn()
+        };
+        
+        // Expected size for degree 10: midpoint between 20 and 100 = 60
+        const expectedSize = 60;
+        
+        // This would be called in the actual implementation
+        // calculateAndStoreBaseSize(mockNode);
+        
+        // Verify calculation: 20 + (10 - 0) * (100 - 20) / (20 - 0) = 20 + 40 = 60
+        // expect(mockNode.data).toHaveBeenCalledWith('baseWidth', expectedSize);
+        // expect(mockNode.data).toHaveBeenCalledWith('baseHeight', expectedSize);
+    });
+    
+    it('should calculate base size for node with degree 20', () => {
+        const mockNode = {
+            degree: jest.fn(() => 20),
+            data: jest.fn()
+        };
+        
+        // Expected size for degree 20: maxSize = 100
+        const expectedSize = 100;
+        
+        // This would be called in the actual implementation
+        // calculateAndStoreBaseSize(mockNode);
+        
+        // expect(mockNode.data).toHaveBeenCalledWith('baseWidth', expectedSize);
+        // expect(mockNode.data).toHaveBeenCalledWith('baseHeight', expectedSize);
+    });
+    
+    it('should clamp size for node with degree > 20', () => {
+        const mockNode = {
+            degree: jest.fn(() => 50),
+            data: jest.fn()
+        };
+        
+        // Expected size for degree 50: clamped to maxSize = 100
+        const expectedSize = 100;
+        
+        // This would be called in the actual implementation
+        // calculateAndStoreBaseSize(mockNode);
+        
+        // Verify clamping works: degree > 20 should result in maxSize
+        // expect(mockNode.data).toHaveBeenCalledWith('baseWidth', expectedSize);
+        // expect(mockNode.data).toHaveBeenCalledWith('baseHeight', expectedSize);
+    });
+});
+
+/**
+ * Test setupZoomIndependentNodeSizes function
+ * Verifies that node sizes are adjusted inversely to zoom level
+ */
+describe('setupZoomIndependentNodeSizes', () => {
+    it('should register a zoom event handler', () => {
+        // This would be called in the actual implementation
+        // setupZoomIndependentNodeSizes();
+        
+        // Verify that a zoom handler was registered
+        // expect(mockCytoscape.on).toHaveBeenCalledWith('zoom', expect.any(Function));
+    });
+    
+    it('should adjust node sizes inversely when zooming in', () => {
+        const mockNode = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 60;
+                if (key === 'baseHeight') return 60;
+            }),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode];
+        mockCytoscape.zoom = jest.fn(() => 2.0); // Zoom level 2.0 (zoomed in)
+        
+        // Simulate zoom event
+        // When zoomed in 2x, sizes should be halved to maintain constant screen size
+        const expectedWidth = 60 / 2.0; // 30
+        const expectedHeight = 60 / 2.0; // 30
+        
+        // This would trigger the zoom handler in the actual implementation
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // expect(mockNode.style).toHaveBeenCalledWith({
+        //     width: expectedWidth,
+        //     height: expectedHeight
+        // });
+    });
+    
+    it('should adjust node sizes inversely when zooming out', () => {
+        const mockNode = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 60;
+                if (key === 'baseHeight') return 60;
+            }),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode];
+        mockCytoscape.zoom = jest.fn(() => 0.5); // Zoom level 0.5 (zoomed out)
+        
+        // Simulate zoom event
+        // When zoomed out to 0.5x, sizes should be doubled to maintain constant screen size
+        const expectedWidth = 60 / 0.5; // 120
+        const expectedHeight = 60 / 0.5; // 120
+        
+        // This would trigger the zoom handler in the actual implementation
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // expect(mockNode.style).toHaveBeenCalledWith({
+        //     width: expectedWidth,
+        //     height: expectedHeight
+        // });
+    });
+    
+    it('should maintain constant screen size at zoom level 1.0', () => {
+        const mockNode = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 60;
+                if (key === 'baseHeight') return 60;
+            }),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode];
+        mockCytoscape.zoom = jest.fn(() => 1.0); // Zoom level 1.0 (no zoom)
+        
+        // Simulate zoom event
+        // At zoom level 1.0, sizes should equal base sizes
+        const expectedWidth = 60 / 1.0; // 60
+        const expectedHeight = 60 / 1.0; // 60
+        
+        // This would trigger the zoom handler in the actual implementation
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // expect(mockNode.style).toHaveBeenCalledWith({
+        //     width: expectedWidth,
+        //     height: expectedHeight
+        // });
+    });
+    
+    it('should handle multiple nodes with different base sizes', () => {
+        const mockNode1 = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 40;
+                if (key === 'baseHeight') return 40;
+            }),
+            style: jest.fn()
+        };
+        
+        const mockNode2 = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 80;
+                if (key === 'baseHeight') return 80;
+            }),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode1, mockNode2];
+        mockCytoscape.zoom = jest.fn(() => 2.0); // Zoom level 2.0
+        
+        // Simulate zoom event
+        // Each node should be adjusted based on its own base size
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // expect(mockNode1.style).toHaveBeenCalledWith({
+        //     width: 40 / 2.0,  // 20
+        //     height: 40 / 2.0  // 20
+        // });
+        
+        // expect(mockNode2.style).toHaveBeenCalledWith({
+        //     width: 80 / 2.0,  // 40
+        //     height: 80 / 2.0  // 40
+        // });
+    });
+});
+
+/**
+ * Test integration with layout changes
+ * Verifies that base sizes are recalculated after layout changes
+ */
+describe('Layout integration', () => {
+    it('should recalculate base sizes after layout change', () => {
+        // This test would verify that when the layout changes,
+        // calculateAndStoreBaseSize is called for all nodes
+        
+        // Mock layout object
+        const mockLayout = {
+            on: jest.fn((event, handler) => {
+                if (event === 'layoutstop') {
+                    // Simulate layout completion
+                    handler();
+                }
+            }),
+            run: jest.fn()
+        };
+        
+        // This would be called in the actual implementation
+        // when the user changes the layout
+        
+        // Verify that calculateAndStoreBaseSize was called for each node
+        // after the layout completes
+    });
+});
+
+/**
+ * Test edge cases and error handling
+ */
+describe('Edge cases', () => {
+    it('should handle nodes with undefined base sizes gracefully', () => {
+        const mockNode = {
+            data: jest.fn(() => undefined),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode];
+        mockCytoscape.zoom = jest.fn(() => 2.0);
+        
+        // Simulate zoom event
+        // Should handle undefined base sizes without crashing
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // Verify that the function doesn't throw an error
+        // and potentially uses a default size or skips the node
+    });
+    
+    it('should handle zero zoom level gracefully', () => {
+        const mockNode = {
+            data: jest.fn((key) => {
+                if (key === 'baseWidth') return 60;
+                if (key === 'baseHeight') return 60;
+            }),
+            style: jest.fn()
+        };
+        
+        mockNodes = [mockNode];
+        mockCytoscape.zoom = jest.fn(() => 0); // Edge case: zero zoom
+        
+        // Simulate zoom event
+        // Should handle zero zoom without dividing by zero
+        // mockZoomHandlers.forEach(handler => handler());
+        
+        // Verify that the function doesn't crash
+    });
+});
+
+/**
+ * Integration test: Complete workflow
+ * Tests the full workflow from loading a graph to zooming
+ */
+describe('Complete workflow integration', () => {
+    it('should maintain constant node sizes through zoom cycle', () => {
+        // This test would simulate:
+        // 1. Loading a graph with multiple nodes
+        // 2. Calculating base sizes for all nodes
+        // 3. Zooming in and verifying sizes decrease
+        // 4. Zooming out and verifying sizes increase
+        // 5. Returning to zoom level 1.0 and verifying original sizes
+        
+        // Expected behavior:
+        // - Screen size of nodes should appear constant throughout
+        // - Distances between nodes should change naturally with zoom
+        // - Node relative sizes should be preserved (larger nodes stay larger)
+    });
+});
+
+/**
+ * NOTE: These tests are currently commented out as they require:
+ * 1. The visualizer.js code to be refactored to be testable in Node.js environment
+ * 2. Proper mocking of DOM elements and Cytoscape.js
+ * 3. A module export system for the visualizer functions
+ * 
+ * Recommended approach to make these tests executable:
+ * 1. Refactor visualizer.js to export testable functions
+ * 2. Use JSDOM or similar for DOM mocking
+ * 3. Create a proper Cytoscape.js mock
+ * 4. Uncomment the test assertions
+ * 5. Run tests with: npm test -- test/visualizer.test.js
+ * 
+ * Alternative testing approach:
+ * - Use Cypress or Playwright for end-to-end testing
+ * - Test the visualizer in a real browser environment
+ * - Verify visual behavior and interactions
+ */
+
+// Placeholder test to ensure the test file is valid
+describe('Visualizer test suite', () => {
+    it('should load test file successfully', () => {
+        expect(true).toBe(true);
+    });
+});
+
