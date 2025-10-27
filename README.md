@@ -1,13 +1,40 @@
 # Code2Graph
 
-Code2Graph is a command-line tool that analyzes React/TypeScript codebases to create comprehensive dependency graphs at the level of individual front-end elements, functions, and database tables. 
+Code2Graph is a comprehensive tool for analyzing React/TypeScript codebases and visualizing code dependencies. It consists of **two main parts** that work independently:
 
-The input is a GitHub repository URL
-The output is a JSON file containing nodes and edges of a graph. 
+## Architecture
 
-The output serves as input for a graph visualisation tool. 
+### **Part 1: Analyzer** (Code → JSON)
+- **Input**: GitHub repository URL
+- **Output**: JSON file with nodes and edges
+- **Purpose**: Analyze code structure and dependencies
+- **Location**: Main `src/` directory
 
-See later in this document how to install and use code2Graph.
+### **Part 2: Visualizer** (JSON → Interactive Graph)
+- **Input**: JSON file from Part 1
+- **Output**: Interactive web-based graph visualization
+- **Purpose**: Visual representation of code dependencies
+- **Location**: `visualizer/` directory
+- **Technology**: Cytoscape.js
+
+## Workflow
+
+1. **Generate Graph**: Use the analyzer to create JSON from code
+   ```bash
+   npm run analyze <repo-url>
+   ```
+
+2. **Visualize Graph**: Open the visualizer to view the graph
+   ```bash
+   # Copy graph-output.json to visualizer/ directory
+   # Open visualizer/index.html in your browser
+   ```
+
+## Independence
+
+Both parts can be used **independently**:
+- Use the analyzer to generate JSON for other visualization tools
+- Use the visualizer with any JSON file following the code2graph format
 
 In the output graph, the top node is 'App-root'. 
 The next layers are UI elements, APIs, functions, etc. 

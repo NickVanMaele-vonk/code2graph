@@ -9,7 +9,18 @@ export default defineConfig([
   {
     ignores: ["cloned-repos/**/*"]
   },
-  { files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"], plugins: { js }, extends: ["js/recommended"], languageOptions: { globals: {...globals.browser, ...globals.node} } },
+  { 
+    files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"], 
+    plugins: { js }, 
+    extends: ["js/recommended"], 
+    languageOptions: { 
+      globals: {
+        ...globals.browser, 
+        ...globals.node,
+        cytoscape: 'readonly' // CDN-loaded library in visualizer/index.html
+      } 
+    } 
+  },
   tseslint.configs.recommended,
   {
     files: ["**/*.{jsx,tsx}"],

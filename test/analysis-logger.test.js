@@ -196,6 +196,11 @@ describe('AnalysisLogger', () => {
       
       await logger.logMemoryUsage(memoryInfo);
       
+      // Phase G: Add small delay to ensure file write completes on Windows
+      // Windows file system can have timing issues with immediate read after write
+      // using appendFile (EPERM errors when file handle not yet released)
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const logPath = logger.getLogPath();
       assert(await fs.pathExists(logPath));
       

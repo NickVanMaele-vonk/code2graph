@@ -402,6 +402,7 @@ export interface RenderLocation {
  * Component information interface
  * Extended component information for dependency analysis
  * UPDATED (Phase A): Added renderLocations to track JSX usage as metadata
+ * UPDATED (Phase G): Fixed informativeElements type to InformativeElementInfo[] for consistency
  */
 export interface ComponentInfo {
   name: string;
@@ -413,7 +414,7 @@ export interface ComponentInfo {
   state: StateInfo[];
   hooks: HookInfo[];
   children: ComponentInfo[];
-  informativeElements: InformativeElement[];
+  informativeElements: InformativeElementInfo[]; // Phase G: Fixed type - must have file property for edge creation
   imports: ImportInfo[];
   exports: ExportInfo[];
   renderLocations?: RenderLocation[]; // NEW (Phase A): JSX usage locations stored as metadata, not separate nodes
@@ -457,6 +458,17 @@ export interface HookInfo {
 /**
  * Informative element interface
  * Elements that exchange internal data with users
+ * 
+ * @deprecated Use InformativeElementInfo instead (Phase G)
+ * 
+ * This interface is DEPRECATED and kept only for backward compatibility.
+ * It lacks critical properties (file, elementType) and uses incorrect dataBindings type (DataBinding[] vs string[]).
+ * 
+ * Use InformativeElementInfo which:
+ * - Includes file property (required for edge creation)
+ * - Includes elementType property (required for node categorization)
+ * - Uses string[] for dataBindings (correct format from AST parser)
+ * - Aligns with ComponentInfo.informativeElements type
  */
 export interface InformativeElement {
   type: ElementType;

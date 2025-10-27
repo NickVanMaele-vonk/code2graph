@@ -21,7 +21,7 @@ import {
   DataType,
   RelationshipType,
   AnalysisError,
-  InformativeElement,
+  InformativeElementInfo, // Phase G: Standard type for informative elements (replaces deprecated InformativeElement)
   ImportInfo,
   PatternAnalysisResult,
   PatternInfo,
@@ -364,6 +364,15 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       // Example: MyComponent with <button onClick={...}> creates MyComponent --contains--> button
       const containsEdges = this.createContainsEdges(nodes);
       edges.push(...containsEdges);
+
+      // Phase G (Solution 2C): Create event handler edges (JSX element calls handler function)
+      // This creates edges from interactive elements (button, input) to their handler functions
+      // Example: button with onClick={increment} creates button --calls--> increment
+      // This is critical for showing user interaction flow: User → Button → Handler → State/API
+      if (components) {
+        const eventHandlerEdges = this.createEventHandlerEdges(nodes, components);
+        edges.push(...eventHandlerEdges);
+      }
 
       // Remove duplicate edges
       const uniqueEdges = this.removeDuplicateEdges(edges);
@@ -784,9 +793,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       const componentNode = this.createComponentNode(component, liveCodeScores);
       nodes.push(componentNode);
 
-      // Phase F: Create nodes only for HTML elements, not component usages
+      // Phase F: Filter component usage - don't create duplicate nodes
+      // Phase G: Keep informative elements that have event handlers or data bindings
       for (const element of component.informativeElements) {
-        // Check if this element is a component usage (capitalized name)
+        // Phase F: Check if this element is a component usage (capitalized name)
         const isComponentUsage = this.isElementNameComponentUsage(element.name);
         
         if (isComponentUsage) {
@@ -816,12 +826,22 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
             }
           }
           // Skip node creation for component usage
-        } else {
-          // Create node for HTML element (button, div, input, etc.)
-          const elementNode = this.createElementNode(element, component.file, liveCodeScores);
-          nodes.push(elementNode);
+          continue;
         }
+        
+        // Phase G (Solution 2B): Informative elements (including HTML elements with handlers)
+        // These are interaction points or data display points, so they should become nodes
+        // Note: Only informative elements are in this list (elements with handlers or bindings)
+        // User expects edges FROM these elements TO handler functions
+        const elementNode = this.createElementNode(element, component.file, liveCodeScores);
+        nodes.push(elementNode);
       }
+
+      // Phase G (Solution 2B): Create nodes for event handler functions
+      // These are the functions that respond to user interactions (onClick, onChange, etc.)
+      // Creating separate nodes enables edges like: button --calls--> increment --modifies--> state
+      const handlerFunctionNodes = this.createHandlerFunctionNodes(component, liveCodeScores);
+      nodes.push(...handlerFunctionNodes);
     }
 
     // Phase C: Create consolidated external dependency nodes (one per package)
@@ -1017,12 +1037,17 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
 
   /**
    * Creates a node for an informative element
-   * @param element - Informative element information
+   * 
+   * Phase G: Updated parameter type from InformativeElement to InformativeElementInfo
+   * This aligns with ComponentInfo.informativeElements type and provides access to
+   * the file property needed for edge creation.
+   * 
+   * @param element - Informative element information (InformativeElementInfo type)
    * @param file - File path
    * @param liveCodeScores - Map of component IDs to live code scores
    * @returns NodeInfo - Created element node
    */
-  private createElementNode(element: InformativeElement, file: string, liveCodeScores: Map<string, number>): NodeInfo {
+  private createElementNode(element: InformativeElementInfo, file: string, liveCodeScores: Map<string, number>): NodeInfo {
     let nodeType: NodeType = 'function';
     let nodeCategory: NodeCategory = 'front end';
     let datatype: DataType = 'array';
@@ -1062,9 +1087,88 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         elementType: element.type,
         props: element.props,
         eventHandlers: element.eventHandlers.map((h: { name: string }) => h.name),
-        dataBindings: element.dataBindings.map((b: { source: string }) => b.source)
+        dataBindings: element.dataBindings // Phase G: Already string[], no need to map (was incorrectly treating as DataBinding[])
       }
     };
+  }
+
+  /**
+   * Phase G (Solution 2B): Creates nodes for event handler functions
+   * 
+   * Business Logic:
+   * Event handler functions (onClick, onChange callbacks) are functional units that respond
+   * to user interactions. They need separate nodes to show the interaction flow:
+   * Button → Handler Function → API/State Update
+   * 
+   * Implementation Strategy:
+   * - Extracts unique handler function names from all informative elements in a component
+   * - Creates one node per unique handler function
+   * - Marks nodes as event handlers for proper styling/filtering
+   * - Enables edge creation: JSX element --calls--> handler function
+   * 
+   * Context (Solution 2B):
+   * This solves the missing "increment" node problem in hello-world example.
+   * User expects to see: button --calls--> increment --modifies--> state.val
+   * 
+   * @param component - Component containing event handlers
+   * @param liveCodeScores - Map of component IDs to live code scores
+   * @returns NodeInfo[] - Array of handler function nodes
+   */
+  private createHandlerFunctionNodes(component: ComponentInfo, liveCodeScores: Map<string, number>): NodeInfo[] {
+    const handlerNodes: NodeInfo[] = [];
+    const seenHandlers = new Set<string>(); // Track unique handler names to avoid duplicates
+    
+    // Extract handler function names from all informative elements
+    for (const element of component.informativeElements) {
+      for (const eventHandler of element.eventHandlers) {
+        // eventHandler.handler contains function names: "handleClick" or "func1, func2"
+        const functionNames = eventHandler.handler.split(', ').map(name => name.trim());
+        
+        for (const functionName of functionNames) {
+          // Skip if we've already created a node for this handler
+          if (seenHandlers.has(functionName) || !functionName) {
+            continue;
+          }
+          
+          seenHandlers.add(functionName);
+          
+          // Create node for handler function
+          // Phase G: Calculate live code score dynamically from usage tracking
+          const handlerFunctionId = `handler_${functionName}_${component.name}`;
+          const liveCodeScore = liveCodeScores.get(handlerFunctionId) ?? 100; // Default 100 (handler functions are typically used)
+          
+          const handlerNode: NodeInfo = {
+            id: this.generateNodeId(),
+            label: functionName,
+            nodeType: 'function',
+            nodeCategory: 'front end',
+            datatype: 'array',
+            liveCodeScore,
+            file: component.file,
+            codeOwnership: 'internal',
+            properties: {
+              isEventHandler: true,
+              parentComponent: component.name,
+              eventType: eventHandler.name, // onClick, onChange, etc.
+              handlerType: eventHandler.type // function-reference, arrow-function, etc.
+            }
+          };
+          
+          handlerNodes.push(handlerNode);
+          
+          if (this.logger) {
+            this.logger.logInfo('Phase G: Created node for event handler function', {
+              handlerName: functionName,
+              parentComponent: component.name,
+              eventType: eventHandler.name,
+              file: component.file
+            });
+          }
+        }
+      }
+    }
+    
+    return handlerNodes;
   }
 
   /**
@@ -1219,6 +1323,47 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   }
 
   /**
+   * Phase G (Solution 1B): Checks if an element name represents an HTML element
+   * 
+   * Business Logic:
+   * HTML elements (button, div, input, etc.) are DOM structure, not functional code units.
+   * According to PRD Section 3.1.3: "JSX Instance Handling: Do not create separate nodes for JSX instances"
+   * HTML elements should not become nodes in the graph - they're just UI structure.
+   * 
+   * React Naming Convention:
+   *   - HTML elements: lowercase (button, div, input, p, span, etc.)
+   *   - React components: PascalCase (MainComponent, Hello, etc.)
+   * 
+   * Context (Solution 1B):
+   * This method prevents node pollution by filtering out HTML elements during node creation.
+   * Nodes should represent functional units (components, functions, APIs), not DOM structure.
+   * 
+   * Implementation Strategy:
+   * Uses React's naming convention: HTML elements always start with lowercase letter.
+   * This is a fundamental React rule enforced by the React parser/compiler.
+   * 
+   * Examples:
+   *   - isHTMLElement("button") → true (HTML element, don't create node)
+   *   - isHTMLElement("div") → true (HTML element, don't create node)
+   *   - isHTMLElement("Button") → false (React component, may need node based on other criteria)
+   * 
+   * @param elementName - Name of the element to check
+   * @returns boolean - True if HTML element (lowercase), false if React component (capitalized)
+   */
+  private isHTMLElement(elementName: string): boolean {
+    if (!elementName || elementName.length === 0) {
+      return false;
+    }
+    
+    // HTML elements in React always start with lowercase letter
+    // This is enforced by React's JSX parser
+    const firstChar = elementName.charAt(0);
+    const isLowercase = firstChar === firstChar.toLowerCase() && firstChar !== firstChar.toUpperCase();
+    
+    return isLowercase;
+  }
+
+  /**
    * Phase E: Creates "contains" edges from components to their JSX elements
    * Uses parentComponent field (added in Phase B) for accurate component-to-element mapping
    * 
@@ -1285,6 +1430,125 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         totalComponentNodes: componentNodes.length,
         totalJSXElements: jsxElementNodes.length,
         containsEdges: edges.length
+      });
+    }
+    
+    return edges;
+  }
+
+  /**
+   * Phase G (Solution 2C): Creates event handler edges from JSX elements to handler functions
+   * 
+   * Business Logic:
+   * When users interact with UI elements (click button, type in input), handler functions execute.
+   * These edges show the user interaction flow: UI Element → Handler Function → State/API
+   * 
+   * Implementation Strategy:
+   * - Find JSX element nodes with event handlers (button with onClick, input with onChange)
+   * - Find corresponding handler function nodes (increment, handleSubmit, etc.)
+   * - Create "calls" edges from element to handler function
+   * - Support multiple handlers per element (onClick and onFocus on same button)
+   * 
+   * Context (Solution 2C):
+   * Solves the missing edge problem in hello-world: button --calls--> increment
+   * User expects to see complete interaction flow, not just static structure
+   * 
+   * Example Edges Created:
+   * - button (onClick={increment}) → increment function
+   * - input (onChange={handleChange}) → handleChange function
+   * - form (onSubmit={handleSubmit}) → handleSubmit function
+   * 
+   * @param allNodes - All nodes in the graph
+   * @param components - Component information with event handlers
+   * @returns EdgeInfo[] - Array of event handler edges
+   */
+  private createEventHandlerEdges(allNodes: NodeInfo[], components: ComponentInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Get all JSX element nodes (interactive elements)
+    const jsxElementNodes = allNodes.filter(node => 
+      node.properties.elementType !== undefined &&
+      node.codeOwnership === 'internal'
+    );
+    
+    // Get all handler function nodes
+    const handlerFunctionNodes = allNodes.filter(node =>
+      node.properties.isEventHandler === true &&
+      node.codeOwnership === 'internal'
+    );
+    
+    // For each JSX element with event handlers
+    for (const jsxElement of jsxElementNodes) {
+      // Find the component that contains this element
+      const parentComponentName = jsxElement.properties.parentComponent as string | undefined;
+      if (!parentComponentName) continue;
+      
+      const parentComponent = components.find(c => 
+        c.name === parentComponentName &&
+        c.file === jsxElement.file
+      );
+      
+      if (!parentComponent) continue;
+      
+      // Find this element in the component's informative elements
+      const informativeElement = parentComponent.informativeElements.find(e =>
+        e.name === jsxElement.label &&
+        e.file === jsxElement.file
+      );
+      
+      if (!informativeElement || informativeElement.eventHandlers.length === 0) {
+        continue;
+      }
+      
+      // For each event handler on this element
+      for (const eventHandler of informativeElement.eventHandlers) {
+        // Extract handler function names (may be multiple: "func1, func2")
+        const functionNames = eventHandler.handler.split(', ').map(name => name.trim());
+        
+        for (const functionName of functionNames) {
+          if (!functionName) continue;
+          
+          // Find the handler function node
+          const handlerNode = handlerFunctionNodes.find(h =>
+            h.label === functionName &&
+            h.properties.parentComponent === parentComponentName &&
+            h.file === jsxElement.file
+          );
+          
+          if (handlerNode) {
+            // Create edge: JSX element --calls--> handler function
+            edges.push({
+              id: this.generateEdgeId(),
+              source: jsxElement.id,
+              target: handlerNode.id,
+              relationship: 'calls',
+              properties: {
+                eventType: eventHandler.name, // onClick, onChange, etc.
+                handlerType: eventHandler.type, // function-reference, arrow-function, etc.
+                triggerMechanism: 'user-interaction',
+                elementName: jsxElement.label,
+                handlerName: functionName
+              }
+            });
+            
+            if (this.logger) {
+              this.logger.logInfo('Phase G: Created event handler edge', {
+                from: jsxElement.label,
+                to: functionName,
+                eventType: eventHandler.name,
+                component: parentComponentName
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    if (this.logger) {
+      this.logger.logInfo('Event handler edges created', {
+        totalJSXElements: jsxElementNodes.length,
+        totalHandlerFunctions: handlerFunctionNodes.length,
+        eventHandlerEdges: edges.length
       });
     }
     
@@ -1379,11 +1643,16 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
 
   /**
    * Extracts API call information from an informative element
-   * @param element - Informative element
+   * 
+   * Phase G: Updated parameter type from InformativeElement to InformativeElementInfo
+   * This aligns with ComponentInfo.informativeElements type which now correctly uses InformativeElementInfo[].
+   * Method logic unchanged - only uses properties present in both interfaces (type, name, props).
+   * 
+   * @param element - Informative element information (InformativeElementInfo type)
    * @param file - File path
    * @returns APICallInfo | null - API call information or null
    */
-  private extractAPICallFromElement(element: InformativeElement, file: string): APICallInfo | null {
+  private extractAPICallFromElement(element: InformativeElementInfo, file: string): APICallInfo | null {
     if (element.type !== 'data-source') {
       return null;
     }

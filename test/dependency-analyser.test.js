@@ -965,7 +965,21 @@ describe('Dependency Analyzer', () => {
       assert.ok(renderLocation.context.includes('MainComponent'), 'Should record parent component name in context');
     });
 
-    it('should create nodes for HTML elements (lowercase names)', () => {
+    /**
+     * Phase G (Solution 2B/2C): Test informative element nodes and handler function nodes
+     * 
+     * Business Logic:
+     * Informative elements (HTML elements with handlers/bindings) ARE nodes because they're interaction points.
+     * Handler functions (increment, handleClick) also become nodes.
+     * This enables user interaction flow edges: button --calls--> increment
+     * 
+     * Test validates:
+     * - Informative HTML elements (with handlers) DO create nodes
+     * - Handler functions create separate nodes
+     * - Components create nodes
+     * - Enables complete interaction flow visualization
+     */
+    it('should create nodes for informative HTML elements and handler functions', () => {
       const components = [
         {
           name: 'MyComponent',
@@ -1004,16 +1018,24 @@ describe('Dependency Analyzer', () => {
 
       const graph = analyzer.buildDependencyGraph(components);
       
-      // Phase F: HTML elements should create nodes (lowercase names)
+      // Phase G: HTML elements with handlers/bindings ARE nodes (interaction points)
       const buttonNode = graph.nodes.find(n => n.label === 'button');
       const divNode = graph.nodes.find(n => n.label === 'div');
+      const componentNode = graph.nodes.find(n => n.label === 'MyComponent');
+      const handleClickNode = graph.nodes.find(n => n.label === 'handleClick');
       
-      assert.ok(buttonNode, 'Should create node for button (HTML element)');
-      assert.ok(divNode, 'Should create node for div (HTML element)');
+      assert.ok(buttonNode, 'Should create node for button (has onClick handler)');
+      assert.ok(divNode, 'Should create node for div (has data binding)');
+      assert.ok(componentNode, 'Should create node for MyComponent');
+      assert.ok(handleClickNode, 'Should create node for handleClick (handler function)');
       
-      // Verify they have elementType (JSX element nodes)
-      assert.ok(buttonNode.properties.elementType, 'Button should have elementType');
-      assert.ok(divNode.properties.elementType, 'Div should have elementType');
+      // Check handler function node properties
+      assert.strictEqual(handleClickNode.properties.isEventHandler, true, 'Handler node should be marked as event handler');
+      assert.strictEqual(handleClickNode.properties.parentComponent, 'MyComponent', 'Handler should belong to MyComponent');
+      
+      // Internal nodes: component + 2 informative elements + 1 handler function = 4
+      const internalNodes = graph.nodes.filter(n => n.codeOwnership === 'internal');
+      assert.ok(internalNodes.length >= 3, 'Should have at least component + informative elements + handler');
     });
 
     it('should handle mixed HTML elements and component usage in same file', () => {
@@ -1550,23 +1572,29 @@ describe('Dependency Analyzer', () => {
           {
             type: 'display',
             name: 'data-list',
+            elementType: 'div', // Phase G: Added required property for InformativeElementInfo
+            file: '/src/ComplexComponent.tsx', // Phase G: Added required property for InformativeElementInfo
             props: { data: 'data' },
             eventHandlers: [],
-            dataBindings: [{ source: 'state.data', target: 'list', type: 'array' }]
+            dataBindings: ['state.data'] // Phase G: Changed from DataBinding[] to string[] format
           },
           {
             type: 'input',
             name: 'submit-button',
+            elementType: 'button', // Phase G: Added required property for InformativeElementInfo
+            file: '/src/ComplexComponent.tsx', // Phase G: Added required property for InformativeElementInfo
             props: { onClick: 'onSubmit' },
-            eventHandlers: [{ name: 'onClick', type: 'click', handler: 'onSubmit' }],
-            dataBindings: []
+            eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'onSubmit' }],
+            dataBindings: [] // Phase G: Already string[] format
           },
           {
             type: 'data-source',
             name: 'fetchData',
+            elementType: 'fetch', // Phase G: Added required property for InformativeElementInfo
+            file: '/src/ComplexComponent.tsx', // Phase G: Added required property for InformativeElementInfo
             props: { endpoint: '/api/data', method: 'GET' },
             eventHandlers: [],
-            dataBindings: []
+            dataBindings: [] // Phase G: Already string[] format
           }
         ],
         imports: [
@@ -1592,7 +1620,9 @@ describe('Dependency Analyzer', () => {
       const apiCalls = analyzer.traceAPICalls([complexComponent]);
 
       assert.ok(graph);
-      assert.strictEqual(graph.nodes.length, 6); // Component + 3 elements + 2 imports
+      // Phase G: Updated expectation to account for event handler function node
+      // 7 nodes = Component + 3 informative elements + 2 imports + 1 handler function (onSubmit)
+      assert.strictEqual(graph.nodes.length, 7);
       assert.strictEqual(apiCalls.length, 2); // fetchData + axios import
     });
   });

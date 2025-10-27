@@ -187,6 +187,61 @@ describe('FileSystemScanner', () => {
       assert(result.files.some(f => f.name === 'small-file.ts'));
       assert(!result.files.some(f => f.name === 'large-file.ts'));
     });
+
+    /**
+     * Phase G (Solution 1A): Test config file filtering
+     * 
+     * Business Logic:
+     * Config files (webpack, babel, jest, etc.) should be excluded from analysis
+     * as they are not React components and don't contribute to application logic.
+     * 
+     * Test validates:
+     * - Common config file patterns are filtered out
+     * - Regular React/TypeScript files are included
+     * - Filtering prevents node pollution in the dependency graph
+     */
+    test('should exclude config files from scanning', async () => {
+      await fs.ensureDir(testDir);
+      
+      // Create config files that should be excluded
+      await fs.outputFile(path.join(testDir, 'webpack.config.js'), 'module.exports = {};');
+      await fs.outputFile(path.join(testDir, 'babel.config.js'), 'module.exports = {};');
+      await fs.outputFile(path.join(testDir, 'jest.config.ts'), 'export default {};');
+      await fs.outputFile(path.join(testDir, 'vite.config.ts'), 'export default {};');
+      await fs.outputFile(path.join(testDir, 'tsconfig.json'), '{}');
+      await fs.outputFile(path.join(testDir, 'package.json'), '{}');
+      await fs.outputFile(path.join(testDir, '.eslintrc.js'), 'module.exports = {};');
+      await fs.outputFile(path.join(testDir, '.env'), 'NODE_ENV=test');
+      
+      // Create regular component files that should be included
+      await fs.outputFile(path.join(testDir, 'Component.tsx'), 'export const Component = () => {};');
+      await fs.outputFile(path.join(testDir, 'utils.ts'), 'export const util = () => {};');
+
+      const config = {
+        includePatterns: ['**/*.{ts,tsx,js,jsx,json}'],
+        excludePatterns: [],
+        maxFileSize: 1024 * 1024,
+        maxFiles: 1000,
+        excludeTestFiles: true,
+        customExclusions: []
+      };
+
+      const result = await scanner.scanFiles(testDir, config);
+
+      // Regular component and utility files should be included
+      assert(result.files.some(f => f.name === 'Component.tsx'), 'Component.tsx should be included');
+      assert(result.files.some(f => f.name === 'utils.ts'), 'utils.ts should be included');
+      
+      // Config files should be excluded
+      assert(!result.files.some(f => f.name === 'webpack.config.js'), 'webpack.config.js should be excluded');
+      assert(!result.files.some(f => f.name === 'babel.config.js'), 'babel.config.js should be excluded');
+      assert(!result.files.some(f => f.name === 'jest.config.ts'), 'jest.config.ts should be excluded');
+      assert(!result.files.some(f => f.name === 'vite.config.ts'), 'vite.config.ts should be excluded');
+      assert(!result.files.some(f => f.name === 'tsconfig.json'), 'tsconfig.json should be excluded');
+      assert(!result.files.some(f => f.name === 'package.json'), 'package.json should be excluded');
+      assert(!result.files.some(f => f.name === '.eslintrc.js'), '.eslintrc.js should be excluded');
+      assert(!result.files.some(f => f.name === '.env'), '.env should be excluded');
+    });
   });
 
   describe('Progress Reporting', () => {

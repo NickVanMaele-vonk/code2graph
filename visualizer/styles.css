@@ -1,0 +1,302 @@
+/**
+ * Code2Graph Visualizer Styles
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.file-input {
+    display: none;
+}
+
+.file-label {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.file-label:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.search-input {
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 200px;
+}
+
+.search-input::placeholder {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* Main Content Area: Two-column layout wrapper */
+/* This creates a horizontal layout that fills remaining vertical space below header */
+/* Purpose: Ensures graph and controls panel occupy full height, eliminating grey space */
+.main-content {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Graph Container */
+/* Takes up remaining horizontal space and full vertical height */
+.graph-container {
+    flex: 1;
+    background: white;
+    border-right: 1px solid #e0e0e0;
+}
+
+/* Controls Panel */
+/* Fixed width sidebar that spans full height from header to bottom */
+.controls-panel {
+    width: 300px;
+    background: white;
+    padding: 1.5rem;
+    overflow-y: auto;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.05);
+}
+
+.control-group {
+    margin-bottom: 2rem;
+}
+
+.control-group h3 {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+    color: #666;
+    font-weight: 600;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 0.5rem;
+}
+
+.checkbox-label {
+    display: block;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.layout-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.layout-select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+/* Stats */
+.stats {
+    font-size: 0.9rem;
+}
+
+.stats p {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+
+.stats strong {
+    color: #667eea;
+}
+
+/* Cytoscape Search Highlight */
+.search-highlight {
+    background-color: #ffeb3b !important;
+    border: 2px solid #fbc02d !important;
+}
+
+/* Selected Node Highlight (Phase 2) */
+.node-selected {
+    border: 3px solid #667eea !important;
+    border-width: 3px !important;
+}
+
+/* Phase 1: Node Tooltip Styles */
+/* Tooltip is positioned absolutely relative to the document body, not within flex layout */
+.node-tooltip {
+    position: fixed; /* Changed from absolute to fixed for reliable positioning */
+    background-color: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    pointer-events: none;
+    z-index: 1000;
+    max-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.node-tooltip h4 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #4CAF50;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    padding-bottom: 0.25rem;
+}
+
+.node-tooltip p {
+    margin: 0.25rem 0;
+    font-size: 0.8rem;
+}
+
+.node-tooltip .tooltip-label {
+    color: #ccc;
+    display: inline-block;
+    min-width: 100px;
+}
+
+.node-tooltip .tooltip-value {
+    color: white;
+    font-weight: 500;
+}
+
+/* Phase 2: Node Details Panel Styles */
+.node-details {
+    font-size: 0.85rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.node-details .placeholder {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 1rem;
+}
+
+.node-details .detail-item {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border-left: 3px solid #667eea;
+}
+
+.node-details .detail-label {
+    font-size: 0.75rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.node-details .detail-value {
+    font-size: 0.9rem;
+    color: #333;
+    word-break: break-word;
+}
+
+.node-details .detail-code {
+    background: #282c34;
+    color: #abb2bf;
+    padding: 0.5rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    overflow-x: auto;
+}
+
+/* Responsive Design */
+/* On mobile devices, stack graph and controls vertically instead of horizontally */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .controls {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .search-input {
+        width: 100%;
+    }
+    
+    /* Switch to vertical stacking on mobile */
+    .main-content {
+        flex-direction: column;
+    }
+    
+    .controls-panel {
+        width: 100%;
+        max-height: 300px;
+    }
+}
+
+/* Scrollbar Styling */
+.controls-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.controls-panel::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.controls-panel::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.controls-panel::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}

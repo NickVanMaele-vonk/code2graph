@@ -641,5 +641,81 @@ describe('AST Parser', () => {
       assert.ok(buttonElement, 'Button element should be found');
       assert.strictEqual(buttonElement.parentComponent, 'MyClassComponent');
     });
+
+    /**
+     * Phase G (Solution 2A): Test event handler function name extraction
+     * 
+     * Validates that the AST parser correctly extracts function names from
+     * different event handler patterns (function reference, method reference, arrow function).
+     */
+    it('should extract function names from event handlers', async () => {
+      const testFile = path.join(tempDir, 'event-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        const MyComponent = () => {
+          const handleClick = () => {};
+          const handleChange = () => {};
+          
+          return (
+            <div>
+              <button onClick={handleClick}>Click Me</button>
+              <input onChange={handleChange} />
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      // Find button element
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      assert.ok(buttonElement.eventHandlers.length > 0, 'Button should have event handlers');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.strictEqual(clickHandler.handler, 'handleClick', 'Should extract handleClick function name');
+      assert.strictEqual(clickHandler.type, 'function-reference', 'Should detect function-reference type');
+
+      // Find input element
+      const inputElement = elements.find(e => e.name === 'input');
+      assert.ok(inputElement, 'Input element should be found');
+      
+      const changeHandler = inputElement.eventHandlers.find(h => h.name === 'onChange');
+      assert.ok(changeHandler, 'Should have onChange handler');
+      assert.strictEqual(changeHandler.handler, 'handleChange', 'Should extract handleChange function name');
+    });
+
+    it('should extract method names from class component handlers', async () => {
+      const testFile = path.join(tempDir, 'class-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        class MyComponent extends React.Component {
+          increment = () => {
+            this.setState({count: this.state.count + 1});
+          };
+          
+          render() {
+            return <button onClick={this.increment}>Increment</button>;
+          }
+        }
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.strictEqual(clickHandler.handler, 'increment', 'Should extract increment method name');
+      assert.strictEqual(clickHandler.type, 'method-reference', 'Should detect method-reference type');
+    });
   });
 });

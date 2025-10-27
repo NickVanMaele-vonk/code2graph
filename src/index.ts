@@ -315,18 +315,9 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
               state: [],
               hooks: [],
               children: [],
-              informativeElements: informativeElements.map(el => ({
-                type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
-                name: el.name,
-                props: el.props,
-                // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
-                eventHandlers: el.eventHandlers,
-                dataBindings: el.dataBindings.map(binding => ({
-                  source: binding,
-                  target: 'element',
-                  type: 'data'
-                }))
-              })),
+              // Phase G: Use AST parser data directly - it already returns InformativeElementInfo[] with correct structure
+              // No transformation needed - preserves file, elementType, and string[] dataBindings as required
+              informativeElements: informativeElements,
               imports,
               exports
             };
@@ -344,18 +335,9 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
             state: [],
             hooks: [],
             children: [],
-            informativeElements: informativeElements.map(el => ({
-              type: el.type as 'display' | 'input' | 'data-source' | 'state-management',
-              name: el.name,
-              props: el.props,
-              // UPDATED (Phase A): eventHandlers is already EventHandler[], no need to map
-              eventHandlers: el.eventHandlers,
-              dataBindings: el.dataBindings.map(binding => ({
-                source: binding,
-                target: 'element',
-                type: 'data'
-              }))
-            })),
+            // Phase G: Use AST parser data directly - it already returns InformativeElementInfo[] with correct structure
+            // No transformation needed - preserves file, elementType, and string[] dataBindings as required
+            informativeElements: informativeElements,
             imports,
             exports
           };
