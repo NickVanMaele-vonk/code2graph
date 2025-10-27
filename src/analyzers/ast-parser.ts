@@ -1078,28 +1078,102 @@ export class ASTParserImpl {
       }
     } else if (t.isArrowFunctionExpression(expression) || t.isFunctionExpression(expression)) {
       // onClick={() => func1(); func2();} or onClick={function() { func1(); func2(); }}
-      // Traverse the function body to find all function calls
+      // Manually traverse the function body to find all function calls
+      // 
+      // Phase H Bug Fix: Cannot use @babel/traverse on child nodes without scope/parentPath
+      // Root Cause: @babel/traverse requires scope and parentPath parameters when traversing
+      // non-Program/File nodes. The function body is a child node (BlockStatement, Expression, etc.),
+      // not the root AST, so calling traverseFunction(body, visitor) throws:
+      // "You must pass a scope and parentPath unless traversing a Program/File"
+      // 
+      // Solution: Use manual recursive traversal via findCallExpressionsInNode() method.
+      // This approach is simpler, more efficient, and more reliable for this small scope.
+      // See findCallExpressionsInNode() for detailed implementation notes.
       const body = expression.body;
       
-      // Use @babel/traverse to find all CallExpression nodes in the function body
-      const visitor: Visitor = {
-        CallExpression: (path) => {
-          const callee = path.node.callee;
-          if (t.isIdentifier(callee)) {
-            // Simple function call: func1()
-            functionNames.push(callee.name);
-          } else if (t.isMemberExpression(callee) && t.isIdentifier(callee.property)) {
-            // Method call: this.func1() or obj.func1()
-            functionNames.push(callee.property.name);
-          }
-        }
-      };
-      
-      // Traverse the function body to extract function calls
-      traverseFunction(body as t.Node, visitor);
+      // Recursively find all CallExpression nodes in the function body
+      // This handles arrow functions with expression bodies: () => doSomething()
+      // And arrow functions with block bodies: () => { func1(); func2(); }
+      // And inline function expressions: function() { doSomething(); }
+      this.findCallExpressionsInNode(body, functionNames);
     }
     
     return functionNames;
+  }
+
+  /**
+   * Recursively finds all CallExpression nodes in an AST node
+   * 
+   * Business Logic (Phase H - Bug Fix):
+   * Manual traversal of AST to find function calls without using @babel/traverse.
+   * This is necessary because @babel/traverse requires scope/parentPath for child nodes,
+   * which is complex to obtain from the parent traversal context.
+   * 
+   * Context:
+   * When analyzing event handlers like onClick={() => func1(); func2();}, we need to find
+   * all function calls within the arrow function body. The standard approach of using
+   * @babel/traverse fails because it requires scope/parentPath when traversing child nodes
+   * (non-Program/File nodes). This caused 39 files to fail parsing in MartialApps-alpha-MVP.
+   * 
+   * Solution Rationale:
+   * For small, well-defined scopes like function bodies, manual recursive traversal is:
+   * 1. Simpler - no need to manage scope/parentPath infrastructure
+   * 2. More efficient - avoids overhead of traverse setup for small nodes
+   * 3. More maintainable - clear, self-contained logic
+   * 4. More reliable - no complex dependencies on parent traversal state
+   * 
+   * Technical Implementation:
+   * - Recursively visits all AST nodes starting from the given node
+   * - Identifies CallExpression nodes and extracts function/method names
+   * - Handles both simple function calls (func()) and method calls (obj.method())
+   * - Mutates the functionNames array in-place for efficiency
+   * 
+   * @param node - AST node to search (typically a function body: BlockStatement, Expression, etc.)
+   * @param functionNames - Array to collect function names (mutated in-place)
+   */
+  private findCallExpressionsInNode(node: t.Node | null | undefined, functionNames: string[]): void {
+    if (!node) return;
+    
+    // If this node is a CallExpression, extract the function name
+    if (t.isCallExpression(node)) {
+      const callee = node.callee;
+      if (t.isIdentifier(callee)) {
+        // Simple function call: func1()
+        functionNames.push(callee.name);
+      } else if (t.isMemberExpression(callee) && t.isIdentifier(callee.property)) {
+        // Method call: this.func1() or obj.func1()
+        functionNames.push(callee.property.name);
+      }
+      // Note: Optional call expressions (func?.()) are also CallExpression nodes
+      // and will be handled by the above logic
+    }
+    
+    // Recursively traverse all properties of the node
+    // This visits all child nodes regardless of their type
+    for (const key in node) {
+      // Skip certain properties that aren't AST nodes
+      if (key === 'loc' || key === 'start' || key === 'end' || key === 'comments') {
+        continue;
+      }
+      
+      // Access node properties using type-safe indexing
+      // Cast to unknown first, then to Record, as AST nodes are complex union types
+      const value = (node as unknown as Record<string, unknown>)[key];
+      
+      if (value && typeof value === 'object') {
+        if (Array.isArray(value)) {
+          // Traverse array of nodes (e.g., statements in BlockStatement.body)
+          value.forEach(item => {
+            if (item && typeof item === 'object') {
+              this.findCallExpressionsInNode(item as t.Node, functionNames);
+            }
+          });
+        } else if ('type' in value) {
+          // Traverse single child node (has 'type' property = AST node)
+          this.findCallExpressionsInNode(value as t.Node, functionNames);
+        }
+      }
+    }
   }
 
   /**

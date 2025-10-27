@@ -718,4 +718,150 @@ describe('AST Parser', () => {
       assert.strictEqual(clickHandler.type, 'method-reference', 'Should detect method-reference type');
     });
   });
+
+  // Phase H Bug Fix Tests: Complex Event Handler Parsing
+  // Tests for the fix of the Babel traversal bug that caused parse errors
+  // when analyzing arrow functions and inline functions in event handlers
+  describe('extractInformativeElements - Complex Event Handlers (Phase H Bug Fix)', () => {
+    it('should handle arrow functions with multiple function calls', async () => {
+      const testFile = path.join(tempDir, 'complex-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          const func1 = () => {};
+          const func2 = () => {};
+          return <button onClick={() => { func1(); func2(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      assert.ok(buttonElement.eventHandlers.length > 0, 'Button should have event handlers');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('func1'), 'Should extract func1');
+      assert.ok(clickHandler.handler.includes('func2'), 'Should extract func2');
+      assert.strictEqual(clickHandler.type, 'arrow-function', 'Should detect arrow-function type');
+    });
+    
+    it('should handle async arrow functions with await', async () => {
+      const testFile = path.join(tempDir, 'async-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={async () => { await apiRequest(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('apiRequest'), 'Should extract apiRequest');
+      assert.strictEqual(clickHandler.type, 'arrow-function', 'Should detect arrow-function type');
+    });
+    
+    it('should handle nested function calls in event handlers', async () => {
+      const testFile = path.join(tempDir, 'nested-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => { toast({ title: handleSuccess() }); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('toast'), 'Should extract toast');
+      assert.ok(clickHandler.handler.includes('handleSuccess'), 'Should extract handleSuccess');
+    });
+    
+    it('should handle inline function expressions', async () => {
+      const testFile = path.join(tempDir, 'inline-functions.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={function() { doSomething(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('doSomething'), 'Should extract doSomething');
+      assert.strictEqual(clickHandler.type, 'function-expression', 'Should detect function-expression type');
+    });
+    
+    it('should handle method calls in event handlers', async () => {
+      const testFile = path.join(tempDir, 'method-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => { queryClient.invalidateQueries(); toast.success(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('invalidateQueries'), 'Should extract invalidateQueries method');
+      assert.ok(clickHandler.handler.includes('success'), 'Should extract success method');
+    });
+    
+    it('should handle arrow function with expression body', async () => {
+      const testFile = path.join(tempDir, 'arrow-expression.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => doSomething()}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('doSomething'), 'Should extract doSomething from expression body');
+    });
+  });
 });
