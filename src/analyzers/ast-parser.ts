@@ -922,21 +922,39 @@ export class ASTParserImpl {
 
   /**
    * Extracts event handlers from a JSX element
-   * UPDATED (Phase A): Now returns EventHandler[] objects with structured information
+   * 
+   * Business Logic (Phase G - Solution 2A):
+   * Analyzes JSX event handler expressions to extract the actual function names being called.
+   * This is critical for understanding user interaction flow: Button → Handler Function → API → Database
+   * 
+   * Supported Patterns:
+   * 1. Function Reference: onClick={handleClick} → extracts "handleClick"
+   * 2. Member Expression: onClick={this.increment} → extracts "increment"
+   * 3. Arrow Function: onClick={() => func1(); func2();} → extracts "func1, func2"
+   * 4. Inline Function: onClick={function() { doSomething(); }} → extracts "doSomething"
+   * 
+   * Implementation Strategy:
+   * - Uses @babel/types to check expression type (Identifier, MemberExpression, ArrowFunction, etc.)
+   * - Traverses function bodies to find all CallExpression nodes
+   * - Handles multiple function calls in a single handler
+   * - Returns structured EventHandler objects for edge creation
+   * 
    * @param node - The JSX element node
-   * @returns EventHandler[] - Array of event handler objects with name, type, and handler function
+   * @returns EventHandler[] - Array of event handler objects with name, type, and handler function(s)
    */
   private extractEventHandlers(node: t.JSXElement): EventHandler[] {
     const handlers: EventHandler[] = [];
     
     node.openingElement.attributes?.forEach((attr: t.JSXAttribute | t.JSXSpreadAttribute) => {
       if (t.isJSXAttribute(attr) && t.isJSXIdentifier(attr.name) && attr.name.name.match(/^on[A-Z]/)) {
-        // Phase A: Create EventHandler object with basic structure
-        // Future phases (B, G) will enhance this to extract actual handler functions
+        // Phase G: Extract actual handler function names from the event handler expression
+        const handlerType = this.getHandlerType(attr.value);
+        const functionNames = this.extractFunctionNamesFromHandler(attr.value);
+        
         handlers.push({
-          name: attr.name.name,
-          type: 'unknown', // Will be enhanced in Phase G to detect function-reference, arrow-function, etc.
-          handler: attr.name.name // Placeholder - Phase G will extract actual function names
+          name: attr.name.name, // Event name: "onClick", "onChange", etc.
+          type: handlerType, // Handler type: "function-reference", "arrow-function", etc.
+          handler: functionNames.join(', ') // Function name(s): "handleClick" or "func1, func2"
         });
       }
     });
@@ -968,6 +986,120 @@ export class ASTParserImpl {
     });
 
     return bindings;
+  }
+
+  /**
+   * Determines the type of event handler expression
+   * 
+   * Business Logic (Phase G - Solution 2A):
+   * Classifies event handler expressions to understand their structure.
+   * Different handler types require different parsing strategies.
+   * 
+   * Handler Types:
+   * - "function-reference": Direct function reference (onClick={handleClick})
+   * - "method-reference": Method reference (onClick={this.increment})
+   * - "arrow-function": Arrow function (onClick={() => doSomething()})
+   * - "function-expression": Inline function (onClick={function() { doSomething(); }})
+   * - "unknown": Unable to determine type
+   * 
+   * @param value - JSX attribute value containing the handler expression
+   * @returns string - Handler type classification
+   */
+  private getHandlerType(value: t.JSXAttribute['value']): string {
+    if (!t.isJSXExpressionContainer(value)) {
+      return 'unknown';
+    }
+    
+    const expression = value.expression;
+    
+    // Skip JSX empty expressions
+    if (t.isJSXEmptyExpression(expression)) {
+      return 'unknown';
+    }
+    
+    if (t.isIdentifier(expression)) {
+      // onClick={handleClick}
+      return 'function-reference';
+    } else if (t.isMemberExpression(expression)) {
+      // onClick={this.increment} or onClick={utils.handleClick}
+      return 'method-reference';
+    } else if (t.isArrowFunctionExpression(expression)) {
+      // onClick={() => doSomething()}
+      return 'arrow-function';
+    } else if (t.isFunctionExpression(expression)) {
+      // onClick={function() { doSomething(); }}
+      return 'function-expression';
+    }
+    
+    return 'unknown';
+  }
+
+  /**
+   * Extracts function names from an event handler expression
+   * 
+   * Business Logic (Phase G - Solution 2A):
+   * Parses event handler expressions to extract the actual function names being called.
+   * Supports multiple function calls within a single handler (e.g., validation + API call).
+   * 
+   * Implementation Strategy:
+   * 1. For function references: extract the identifier name directly
+   * 2. For member expressions: extract the property name (method name)
+   * 3. For arrow/inline functions: traverse the function body to find all CallExpression nodes
+   * 
+   * Examples:
+   * - onClick={handleClick} → ["handleClick"]
+   * - onClick={this.increment} → ["increment"]
+   * - onClick={() => { validate(); submit(); }} → ["validate", "submit"]
+   * 
+   * @param value - JSX attribute value containing the handler expression
+   * @returns string[] - Array of function names called in the handler
+   */
+  private extractFunctionNamesFromHandler(value: t.JSXAttribute['value']): string[] {
+    if (!t.isJSXExpressionContainer(value)) {
+      return [];
+    }
+    
+    const expression = value.expression;
+    const functionNames: string[] = [];
+    
+    // Skip JSX empty expressions
+    if (t.isJSXEmptyExpression(expression)) {
+      return [];
+    }
+    
+    if (t.isIdentifier(expression)) {
+      // onClick={handleClick}
+      functionNames.push(expression.name);
+    } else if (t.isMemberExpression(expression)) {
+      // onClick={this.increment} or onClick={utils.handleClick}
+      // Extract the property name (method name)
+      if (t.isIdentifier(expression.property)) {
+        functionNames.push(expression.property.name);
+      }
+    } else if (t.isArrowFunctionExpression(expression) || t.isFunctionExpression(expression)) {
+      // onClick={() => func1(); func2();} or onClick={function() { func1(); func2(); }}
+      // Traverse the function body to find all function calls
+      const body = expression.body;
+      
+      // Use @babel/traverse to find all CallExpression nodes in the function body
+      const visitor: Visitor = {
+        CallExpression: (path) => {
+          const callee = path.node.callee;
+          if (t.isIdentifier(callee)) {
+            // Simple function call: func1()
+            functionNames.push(callee.name);
+          } else if (t.isMemberExpression(callee) && t.isIdentifier(callee.property)) {
+            // Method call: this.func1() or obj.func1()
+            functionNames.push(callee.property.name);
+          }
+        }
+      };
+      
+      // Traverse the function body to extract function calls
+      traverseFunction(body as t.Node, visitor);
+    }
+    
+    return functionNames;
   }
 
   /**

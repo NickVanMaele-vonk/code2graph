@@ -284,6 +284,15 @@ export class FileSystemScanner {
   /**
    * Determines if a file should be included in the scan results
    * 
+   * Business Logic:
+   * - Filters out config files (webpack, babel, jest, etc.) that are not React components
+   * - Filters out test files when configured
+   * - Applies custom include/exclude patterns
+   * 
+   * Context (Phase G - Solution 1A):
+   * Config files should not be analyzed as they're not functional React code.
+   * This prevents nodes like "webpack.config" from appearing in the graph.
+   * 
    * @param filename - File name
    * @param fullPath - Full file path
    * @param config - File scanning configuration
@@ -302,6 +311,12 @@ export class FileSystemScanner {
 
     // Check custom exclusions
     if (config.customExclusions.some(exclusion => fullPath.includes(exclusion))) {
+      return false;
+    }
+
+    // Phase G (Solution 1A): Check if it's a config file that should be excluded
+    // Config files are not React components and should not be analyzed
+    if (this.isConfigFile(filename)) {
       return false;
     }
 
@@ -374,14 +389,23 @@ export class FileSystemScanner {
   /**
    * Checks if a filename matches a specific pattern
    * 
+   * Phase G: Enhanced to handle brace expansion patterns like {ts,tsx,js}
+   * 
    * @param filename - File name to check
-   * @param pattern - Pattern to match against
+   * @param pattern - Pattern to match against (supports glob and brace expansion)
    * @returns boolean - True if file matches the pattern
    */
   private matchesPattern(filename: string, pattern: string): boolean {
     if (pattern.includes('*')) {
       // Handle glob patterns with proper regex conversion
       let escapedPattern = pattern.replace(/\\/g, '\\\\').replace(/\./g, '\\.');
+      
+      // Phase G: Handle brace expansion {ts,tsx,js} → (ts|tsx|js)
+      // This is required for patterns like **/*.{ts,tsx,js,jsx,json}
+      escapedPattern = escapedPattern.replace(/\{([^}]+)\}/g, (match, group) => {
+        const alternatives = group.split(',').map((s: string) => s.trim());
+        return `(${alternatives.join('|')})`;
+      });
       
       // Handle ** (any directory depth)
       escapedPattern = escapedPattern.replace(/\*\*\//g, '(?:.*/)?');
@@ -423,6 +447,70 @@ export class FileSystemScanner {
     ];
 
     return testPatterns.some(pattern => pattern.test(filename));
+  }
+
+  /**
+   * Determines if a file is a configuration file that should be excluded
+   * 
+   * Business Logic:
+   * Configuration files (webpack, babel, jest, etc.) are not React components
+   * and should not be analyzed. They define build/test infrastructure, not application logic.
+   * 
+   * Context (Phase G - Solution 1A):
+   * Prevents config files from being parsed and creating unnecessary nodes in the graph.
+   * According to PRD Section 3.1.2: "What Does NOT Become a Node" includes config files.
+   * 
+   * Implementation Strategy:
+   * Uses pattern matching to detect common config file naming conventions:
+   * - Files ending with .config.js/ts (webpack.config.js, babel.config.ts)
+   * - Files matching known config patterns (vite.config, rollup.config)
+   * - tsconfig.json and similar configuration files
+   * 
+   * @param filename - File name to check
+   * @returns boolean - True if file is a config file and should be excluded
+   */
+  private isConfigFile(filename: string): boolean {
+    // Config file patterns based on common JavaScript/TypeScript ecosystem configurations
+    const configPatterns = [
+      // Generic .config pattern (webpack.config.js, babel.config.ts, etc.)
+      /\.config\.(js|ts|cjs|mjs)$/,
+      
+      // Build tool configs
+      /webpack\./i,
+      /vite\./i,
+      /rollup\./i,
+      /esbuild\./i,
+      /parcel\./i,
+      
+      // Transpiler/compiler configs
+      /babel\.config/i,
+      /tsconfig\.json$/i,
+      /jsconfig\.json$/i,
+      
+      // Test framework configs
+      /jest\.config/i,
+      /vitest\.config/i,
+      /karma\.config/i,
+      /mocha\.config/i,
+      
+      // Linter/formatter configs
+      /eslint\.config/i,
+      /\.eslintrc/i,
+      /prettier\.config/i,
+      /\.prettierrc/i,
+      
+      // Package/dependency configs
+      /package\.json$/i,
+      /package-lock\.json$/i,
+      /yarn\.lock$/i,
+      /pnpm-lock\.yaml$/i,
+      
+      // Environment configs
+      /\.env$/i,
+      /\.env\./i
+    ];
+
+    return configPatterns.some(pattern => pattern.test(filename));
   }
 
   /**

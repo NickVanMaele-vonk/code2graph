@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code2Graph Visualizer</title>
+    
+    <!-- Cytoscape.js Library -->
+    <script src="https://unpkg.com/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Code2Graph Visualizer</h1>
+            <div class="controls">
+                <input 
+                    type="file" 
+                    id="fileInput" 
+                    accept=".json" 
+                    class="file-input"
+                >
+                <label for="fileInput" class="file-label">Load JSON</label>
+                
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search nodes..." 
+                    class="search-input"
+                >
+            </div>
+        </header>
+
+        <!-- Main Content Area: Two-column layout with graph on left and controls on right -->
+        <!-- This wrapper ensures both the graph and controls panel occupy full height below header -->
+        <div class="main-content">
+            <!-- Graph Container -->
+            <div id="cy" class="graph-container"></div>
+
+            <!-- Controls Panel -->
+            <div class="controls-panel">
+            <div class="control-group">
+                <h3>Filters</h3>
+                <label class="checkbox-label">
+                    <input type="checkbox" class="node-filter" data-type="function" checked>
+                    Functions
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" class="node-filter" data-type="external-dependency" checked>
+                    External Dependencies
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <h3>Layout</h3>
+                <select id="layoutSelect" class="layout-select">
+                    <option value="cose">Force-Directed (COSE)</option>
+                    <option value="grid">Grid</option>
+                    <option value="circle">Circle</option>
+                    <option value="concentric">Concentric</option>
+                    <option value="breadthfirst">Breadth-First</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <h3>Stats</h3>
+                <div id="stats" class="stats"></div>
+            </div>
+
+            <!-- Phase 2: Node Details Panel -->
+            <div class="control-group">
+                <h3>Node Details</h3>
+                <div id="nodeDetails" class="node-details">
+                    <p class="placeholder">Click a node to see details</p>
+                </div>
+            </div>
+        </div>
+        </div> <!-- End of main-content wrapper -->
+        
+        <!-- Tooltip for hover details (Phase 1) - Positioned absolutely, outside flex layout -->
+        <div id="nodeTooltip" class="node-tooltip" style="display: none;"></div>
+    </div>
+
+    <!-- Script -->
+    <script src="visualizer.js"></script>
+</body>
+</html>
