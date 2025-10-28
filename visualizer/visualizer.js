@@ -3,6 +3,13 @@
  * Transforms code2graph JSON output into interactive graph visualization
  */
 
+// Change Request 002 - Phase 5: Register Dagre Extension
+// Context: Enables hierarchical left-to-right layout for UI sections
+// Business Logic: Dagre algorithm positions nodes by category (front-end, middleware, api, database)
+if (typeof cytoscape !== 'undefined' && typeof cytoscapeDagre !== 'undefined') {
+    cytoscape.use(cytoscapeDagre);
+}
+
 let cy;
 
 /**
@@ -68,6 +75,24 @@ function initializeCytoscape() {
                     'shape': 'diamond'
                 }
             },
+            // Change Request 002 - Phase 5: UI Section Node Styling
+            // Context: UI sections are first-level nodes representing screens/tabs/pages
+            // Business Logic: Leftmost nodes in hierarchical layout, larger size to emphasize hierarchy
+            {
+                selector: 'node[type = "ui-section"]',
+                style: {
+                    'background-color': '#2196F3',
+                    'shape': 'roundrectangle',
+                    'width': 60,
+                    'height': 40,
+                    'font-size': '12px',
+                    'font-weight': 'bold',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'color': '#ffffff',
+                    'text-background-opacity': 0
+                }
+            },
             {
                 selector: 'edge',
                 style: {
@@ -77,6 +102,21 @@ function initializeCytoscape() {
                     'target-arrow-shape': 'vee',
                     'arrow-scale': 0.5,
                     'curve-style': 'bezier'
+                }
+            },
+            // Change Request 002 - Phase 5: Displays Edge Styling
+            // Context: "displays" relationships connect UI sections to their components
+            // Business Logic: Distinct visual from other edges to show section-component membership
+            {
+                selector: 'edge[relationship = "displays"]',
+                style: {
+                    'width': 2,
+                    'line-color': '#2196F3',
+                    'target-arrow-color': '#2196F3',
+                    'target-arrow-shape': 'triangle',
+                    'arrow-scale': 1.2,
+                    'curve-style': 'bezier',
+                    'line-style': 'solid'
                 }
             },
             // Focus Mode Styles - Enhanced Node Click Functionality
@@ -122,6 +162,18 @@ function initializeCytoscape() {
                     'opacity': 0.2,
                     'line-color': '#d0d0d0',
                     'target-arrow-color': '#d0d0d0'
+                }
+            },
+            // Search Highlight Style
+            // Applied when user searches for nodes by label
+            {
+                selector: '.search-highlight',
+                style: {
+                    'background-color': '#FFEB3B',
+                    'border-width': 3,
+                    'border-color': '#FBC02D',
+                    'border-style': 'solid',
+                    'z-index': 9999
                 }
             }
         ],
@@ -260,6 +312,26 @@ function calculateAndStoreBaseSize(node) {
 }
 
 /**
+ * Get dagre rank (column position) based on node category
+ * Change Request 002 - Phase 5 Bug Fix: Assign explicit ranks to nodes
+ * Context: Dagre reads rank from node data, not from layout options
+ * Business Logic: Maps node categories to column positions (0=leftmost, 3=rightmost)
+ * 
+ * @param {string} category - Node category (front-end, middleware, api, database)
+ * @returns {number} - Rank number (0-3) for hierarchical positioning
+ */
+function getCategoryRank(category) {
+    const categoryRank = {
+        'front-end': 0,    // Column 0 (leftmost) - UI elements start here
+        'middleware': 1,   // Column 1 - Business logic and handlers
+        'api': 2,          // Column 2 - API endpoints
+        'database': 3,     // Column 3 (rightmost) - Data persistence layer
+        'library': 1       // External libraries positioned with middleware
+    };
+    return categoryRank[category] !== undefined ? categoryRank[category] : 1;
+}
+
+/**
  * Transform code2graph JSON to Cytoscape.js format
  * @param {Object} data - code2graph JSON data
  * @returns {Object} - Cytoscape.js elements
@@ -279,6 +351,8 @@ function transformData(data) {
                     label: node.label || node.id,
                     type: node.nodeType,
                     category: node.nodeCategory,
+                    nodeCategory: node.nodeCategory,  // Change Request 002 - Phase 5: Keep original for dagre layout
+                    rank: getCategoryRank(node.nodeCategory), // Change Request 002 - Phase 5: Explicit rank for dagre
                     liveCodeScore: node.liveCodeScore,
                     // Include all original properties for tooltip
                     ...node
@@ -326,12 +400,11 @@ function loadGraph(data) {
         calculateAndStoreBaseSize(node);
     });
     
-    // Apply layout
-    cy.layout({
-        name: 'cose',
-        fit: true,
-        padding: 30
-    }).run();
+    // Change Request 002 - Phase 5: Use currently selected layout on load
+    // Context: Respect user's layout preference when loading new graph data
+    // Business Logic: Trigger layout change event to apply correct layout algorithm
+    const changeEvent = new Event('change');
+    document.getElementById('layoutSelect').dispatchEvent(changeEvent);
     
     // Update stats
     updateStats(data);
@@ -748,23 +821,113 @@ document.querySelectorAll('.node-filter').forEach(checkbox => {
  * Handle layout selection
  * Business Logic: Allow users to choose different graph layouts for better visualization
  * Context: Recalculate base sizes after layout changes to ensure proper node sizing
+ * 
+ * Change Request 002 - Phase 5: Hierarchical Dagre Layout
+ * Context: Dagre layout positions nodes left-to-right by category hierarchy
+ * Business Logic: UI sections (leftmost) → middleware → API → database (rightmost)
  */
 document.getElementById('layoutSelect').addEventListener('change', (event) => {
     const layoutName = event.target.value;
     
-    // Apply the new layout
-    const layout = cy.layout({
+    // Configure layout options
+    let layoutOptions = {
         name: layoutName,
         fit: true,
         padding: 30
-    });
+    };
+    
+    // Change Request 002 - Phase 5: Dagre-specific configuration
+    // Context: Hierarchical layout requires rank direction and spacing parameters
+    // Business Logic: Positions nodes based on nodeCategory to show event flow sequence
+    if (layoutName === 'dagre') {
+        // Apply dagre layout only to connected nodes (nodes with edges)
+        // Isolated nodes will be positioned separately in layoutstop callback
+        const connectedNodes = cy.nodes().filter(node => node.degree(false) > 0);
+        
+        if (connectedNodes.length > 0) {
+            // Apply dagre layout only to connected nodes
+            layoutOptions = {
+                ...layoutOptions,
+                eles: connectedNodes,    // Only layout connected nodes
+                rankDir: 'LR',           // Left-to-Right direction
+                nodeSep: 50,             // Horizontal spacing between nodes
+                edgeSep: 10,             // Spacing between edges
+                rankSep: 100,            // Vertical spacing between ranks (categories)
+                ranker: 'network-simplex', // Algorithm for rank assignment
+                
+                // Change Request 002 - Phase 5 Bug Fix: Edge length tuning
+                // Context: Dagre reads rank from node.data('rank'), set in transformData()
+                // Business Logic: Fine-tune edge lengths between ranks for optimal spacing
+                minLen: function(edge) {
+                    const sourceCategory = edge.source().data('nodeCategory');
+                    const targetCategory = edge.target().data('nodeCategory');
+                    
+                    // Define category order for hierarchical positioning
+                    const categoryRank = {
+                        'front-end': 0,
+                        'middleware': 1,
+                        'api': 2,
+                        'database': 3,
+                        'library': 1  // Libraries positioned with middleware
+                    };
+                    
+                    const sourceRank = categoryRank[sourceCategory] || 1;
+                    const targetRank = categoryRank[targetCategory] || 1;
+                    
+                    // Return minimum edge length to enforce rank separation
+                    return Math.max(1, targetRank - sourceRank);
+                }
+            };
+        }
+    }
+    
+    // Apply the layout
+    const layout = cy.layout(layoutOptions);
     
     // Recalculate base sizes after layout completes
     // This ensures nodes maintain zoom-independent sizing after layout changes
     layout.on('layoutstop', function() {
+        // Change Request 002 - Phase 5 Bug Fix: Position isolated nodes at bottom
+        // Context: Isolated nodes disrupt hierarchical layout when positioned in middle
+        // Business Logic: Place disconnected nodes in compact grid below main graph
+        if (layoutName === 'dagre') {
+            const isolatedNodes = cy.nodes().filter(node => node.degree(false) === 0);
+            
+            if (isolatedNodes.length > 0) {
+                // Get bounding box of connected nodes to position isolated nodes below
+                const connectedNodes = cy.nodes().filter(node => node.degree(false) > 0);
+                let maxY = 0;
+                
+                if (connectedNodes.length > 0) {
+                    connectedNodes.forEach(node => {
+                        const pos = node.position();
+                        if (pos.y > maxY) maxY = pos.y;
+                    });
+                }
+                
+                // Position isolated nodes in a compact grid at the bottom
+                const isolatedStartY = maxY + 150; // 150px gap below main graph
+                const gridColumns = Math.ceil(Math.sqrt(isolatedNodes.length));
+                const nodeSpacing = 80;
+                
+                isolatedNodes.forEach((node, index) => {
+                    const col = index % gridColumns;
+                    const row = Math.floor(index / gridColumns);
+                    
+                    node.position({
+                        x: col * nodeSpacing,
+                        y: isolatedStartY + (row * nodeSpacing)
+                    });
+                });
+            }
+        }
+        
         cy.nodes().forEach(function(node) {
             calculateAndStoreBaseSize(node);
         });
+        
+        // Fit the view to show all nodes
+        cy.fit(undefined, 30);
     });
     
     layout.run();

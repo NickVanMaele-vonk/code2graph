@@ -30,7 +30,12 @@ import {
   UsageStatistics,
   DeadCodeInfo,
   PerformanceWarning,
-  FileInfo
+  FileInfo,
+  // Phase 3: Component Mapping (Change Request 002)
+  RouteInfo,
+  ComponentTreeNode,
+  ComponentToSectionMapping,
+  ComponentUsageContext
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
 import { UsageTrackerImpl } from './usage-tracker.js';
@@ -38,6 +43,7 @@ import { APIEndpointAnalyzerImpl, BackendRouteAnalysis } from './api-endpoint-an
 import { DatabaseAnalyzerImpl, DatabaseAnalysis } from './database-analyzer.js';
 import { ConnectionMapperImpl } from './connection-mapper.js';
 import { APIBackendProgressIndicatorImpl } from './api-backend-progress-indicator.js';
+import { JSONGeneratorImpl } from '../generators/json-generator.js'; // Phase 4.3: For creating UI section nodes
 // Note: path-to-regexp imports removed as we're using custom segment-based parsing
 
 /**
@@ -71,15 +77,22 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   /**
    * Builds a comprehensive dependency graph from component information
    * Creates nodes for all components, functions, APIs, and database entities
+   * Phase 4.3: Integration - Added UI section node creation and "displays" edge generation
+   * 
+   * Change Request 002 - Phase 4.3: Integration
+   * Context: Routes are used to create UI section nodes and map components to sections
+   * Business Logic: UI sections are first-level nodes that "display" components in the hierarchy
    * 
    * @param components - Array of component information to analyze
-   * @returns DependencyGraph - Complete dependency graph with nodes and edges
+   * @param routes - Array of route information for UI section discovery (default: empty array)
+   * @returns DependencyGraph - Complete dependency graph with nodes, edges, and UI sections
    */
-  buildDependencyGraph(components: ComponentInfo[]): DependencyGraph {
+  buildDependencyGraph(components: ComponentInfo[], routes: RouteInfo[] = []): DependencyGraph {
     try {
       if (this.logger) {
         this.logger.logInfo('Starting dependency graph construction', {
-          componentCount: components.length
+          componentCount: components.length,
+          routeCount: routes.length
         });
       }
 
@@ -97,6 +110,51 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       // Phase C: Create edges between nodes (now includes component info for import edges)
       const edges = this.createEdges(nodes, components);
 
+      // Change Request 002 - Phase 4.3: Create UI section nodes and "displays" edges
+      // Context: Routes define UI sections; component mapping creates section→component relationships
+      // Business Logic: UI sections are leftmost nodes in hierarchical layout, displaying components
+      let sectionNodes: NodeInfo[] = [];
+      let displaysEdges: EdgeInfo[] = [];
+      
+      if (routes.length > 0) {
+        if (this.logger) {
+          this.logger.logInfo('Creating UI section nodes and displays edges', {
+            routeCount: routes.length
+          });
+        }
+
+        // Step 1: Map components to sections based on routes
+        // Pass existing nodes to map component IDs correctly
+        const componentMappings = this.mapComponentsToSections(routes, components, nodes);
+        
+        if (this.logger) {
+          this.logger.logInfo('Component-to-section mapping completed', {
+            totalMappings: componentMappings.length,
+            sharedComponents: componentMappings.filter(m => !m.isRootComponent).length
+          });
+        }
+
+        // Step 2: Create section nodes from routes
+        // Using json-generator's createSectionNodes method
+        const jsonGenerator = new JSONGeneratorImpl(this.logger);
+        sectionNodes = jsonGenerator.createSectionNodes(routes);
+        
+        // Step 3: Create "displays" edges from sections to components
+        // Signature: createDisplaysEdges(sectionNodes, mappings)
+        displaysEdges = this.createDisplaysEdges(sectionNodes, componentMappings);
+        
+        // Add section nodes and displays edges to the graph
+        nodes.push(...sectionNodes);
+        edges.push(...displaysEdges);
+
+        if (this.logger) {
+          this.logger.logInfo('UI section nodes and displays edges created', {
+            sectionNodesCreated: sectionNodes.length,
+            displaysEdgesCreated: displaysEdges.length
+          });
+        }
+      }
+
       // Create metadata
       const metadata = this.createGraphMetadata(components, nodes, edges);
 
@@ -110,6 +168,8 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         this.logger.logInfo('Dependency graph construction completed', {
           totalNodes: nodes.length,
           totalEdges: edges.length,
+          sectionNodes: sectionNodes.length,
+          displaysEdges: displaysEdges.length,
           deadCodeNodes: nodes.filter(n => n.liveCodeScore === 0).length,
           liveCodeNodes: nodes.filter(n => n.liveCodeScore === 100).length
         });
@@ -808,9 +868,13 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
       // Phase H: Filter out non-interactive HTML formatting elements
       for (const element of component.informativeElements) {
         // Phase F: Check if this element is a component usage (capitalized name)
+        // Phase 5.4: Trust AST parser's decision - if marked as 'input', it's interactive, not component usage
         const isComponentUsage = this.isElementNameComponentUsage(element.name);
         
-        if (isComponentUsage) {
+        
+        // Only filter out component usage if it's NOT already marked as interactive by the AST parser
+        // Interactive components (Button, Link, etc.) have type === 'input' from Component Type Recognition
+        if (isComponentUsage && element.type !== 'input') {
           // Phase F: Don't create node for component usage
           // Instead, add to renderLocations metadata on the target component
           const targetComponent = components.find(comp => comp.name === element.name);
@@ -1042,11 +1106,14 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const componentId = `component_${component.name}`;
     const liveCodeScore = liveCodeScores.get(componentId) ?? 100;
 
+    // Change Request 002: Updated category to "front-end" (hyphenated)
+    // Context: React components are UI elements in the front-end layer
+    // Business Logic: Positioned leftmost in hierarchical layout as user interaction starts here
     return {
       id: this.generateNodeId(),
       label: component.name,
       nodeType: 'function' as NodeType,
-      nodeCategory: 'front end' as NodeCategory,
+      nodeCategory: 'front-end' as NodeCategory, // CR-002: Changed from "front end" to "front-end"
       datatype: 'array' as DataType,
       liveCodeScore,
       file: component.file,
@@ -1075,25 +1142,32 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * @returns NodeInfo - Created element node
    */
   private createElementNode(element: InformativeElementInfo, file: string, liveCodeScores: Map<string, number>): NodeInfo {
+    // Change Request 002: Updated categorization to use new 4-tier architecture
+    // Context: Categorize elements based on their role in the event flow
+    // Business Logic: UI elements → front-end, data sources → middleware
     let nodeType: NodeType = 'function';
-    let nodeCategory: NodeCategory = 'front end';
+    let nodeCategory: NodeCategory = 'front-end'; // CR-002: Default to front-end for UI elements
     let datatype: DataType = 'array';
 
-    // Determine node type based on element type
+    // Determine node type and category based on element type
+    // Following event flow: front-end → middleware → api → database
     switch (element.type) {
       case 'data-source':
+        // Data sources (API calls) are middleware functions that process data
         nodeType = 'API';
-        nodeCategory = 'middleware';
+        nodeCategory = 'middleware'; // CR-002: Middleware layer for business logic
         break;
       case 'state-management':
+        // State management (useState) is front-end UI state
         nodeType = 'function';
-        nodeCategory = 'front end';
+        nodeCategory = 'front-end'; // CR-002: Changed from "front end"
         datatype = 'array';
         break;
       case 'display':
       case 'input':
+        // Display and input elements are UI components in front-end layer
         nodeType = 'function';
-        nodeCategory = 'front end';
+        nodeCategory = 'front-end'; // CR-002: Changed from "front end"
         break;
     }
 
@@ -1181,6 +1255,9 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
           
           // Create node for handler function
           // Phase G: Calculate live code score dynamically from usage tracking
+          // Change Request 002: Handler functions categorized as "middleware"
+          // Context: Event handlers are business logic functions that process user interactions
+          // Business Logic: Positioned in middleware layer (center-left) following event flow
           const handlerFunctionId = `handler_${functionName}_${component.name}`;
           const liveCodeScore = liveCodeScores.get(handlerFunctionId) ?? 100; // Default 100 (handler functions are typically used)
           
@@ -1188,7 +1265,7 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
             id: this.generateNodeId(),
             label: functionName,
             nodeType: 'function',
-            nodeCategory: 'front end',
+            nodeCategory: 'middleware', // CR-002: Changed from "front end" - handlers are business logic
             datatype: 'array',
             liveCodeScore,
             file: component.file,
@@ -1252,16 +1329,19 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const edges: EdgeInfo[] = [];
 
     // Separate component definition nodes from JSX element nodes
+    // Change Request 002: Updated to use "front-end" (hyphenated)
+    // Context: React component definitions are UI elements in the front-end layer
     const componentNodes = allNodes.filter(node => 
       node.properties.type !== undefined && 
       node.nodeType === 'function' &&
-      node.nodeCategory === 'front end' &&
+      node.nodeCategory === 'front-end' && // CR-002: Changed from "front end"
       !node.properties.elementType // Not a JSX element, but a component definition
     );
 
     const jsxElementNodes = allNodes.filter(node => 
       this.isJSXComponentUsage(node)
     );
+
 
     // For each JSX element that represents a component usage
     for (const jsxNode of jsxElementNodes) {
@@ -1409,7 +1489,42 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
    * @param element - Informative element to check
    * @returns boolean - True if element should become a node, false to skip
    */
+  
+  /**
+   * Helper method to check if an element name is a known interactive component.
+   * This matches the same logic used in the AST parser's Component Type Recognition.
+   * 
+   * @param elementName - The name of the JSX element
+   * @returns boolean - True if it's a known interactive component
+   */
+  private isKnownInteractiveComponent(elementName: string): boolean {
+    const interactiveComponents = new Set([
+      'Button', 'Link', 'Input', 'Textarea', 'Select', 'Checkbox', 'Radio', 'Switch',
+      'DialogTrigger', 'PopoverTrigger', 'DropdownMenuTrigger', 'SheetTrigger',
+      'AccordionTrigger', 'CollapsibleTrigger', 'TabsTrigger', 'Toggle',
+      'MenuItem', 'DropdownMenuItem', 'ContextMenuItem', 'SelectItem',
+      'FormField', 'FormControl', 'FormItem', 'FormLabel', 'FormMessage',
+      'Card', 'CardHeader', 'CardContent', 'CardFooter',
+      'AlertDialogTrigger', 'AlertDialogAction', 'AlertDialogCancel',
+      'NavigationMenuTrigger', 'NavigationMenuLink',
+      'Calendar', 'DatePicker', 'TimePicker', 'DateTimePicker',
+      'Slider', 'Range', 'Progress', 'Spinner', 'LoadingButton',
+      'IconButton', 'FloatingActionButton', 'SpeedDial', 'TooltipTrigger'
+    ]);
+    
+    return interactiveComponents.has(elementName);
+  }
+
   private shouldCreateNodeForElement(element: InformativeElementInfo): boolean {
+    // Rule 0: Interactive components from Component Type Recognition
+    // Phase 5.4: Trust AST parser's decision for known interactive components
+    // These have type='input' regardless of event handlers
+    // Example: <Button>Mark Attendance</Button> wrapped in <DialogTrigger>
+    // Example: <Button onClick={...}>Save</Button> - still interactive even with handlers
+    if (element.type === 'input' && this.isKnownInteractiveComponent(element.name)) {
+      return true;
+    }
+    
     // Rule 1: Elements with event handlers - ONLY create node if has semantic identifier
     // This is the key change from previous implementation
     // Previously: all elements with handlers became nodes
@@ -1523,10 +1638,12 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const edges: EdgeInfo[] = [];
     
     // Get component nodes (internal custom code only)
+    // Change Request 002: Updated to use "front-end" (hyphenated)
+    // Context: React component definitions are UI elements in the front-end layer
     const componentNodes = allNodes.filter(node => 
       node.properties.type !== undefined && 
       node.nodeType === 'function' &&
-      node.nodeCategory === 'front end' &&
+      node.nodeCategory === 'front-end' && // CR-002: Changed from "front end"
       !node.properties.elementType && // Not a JSX element, but a component definition
       node.codeOwnership === 'internal' // Only custom components, not external
     );
@@ -2338,6 +2455,451 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     ];
 
     return backendPatterns.some(pattern => pattern.test(file.path || file.name || ''));
+  }
+
+  /**
+   * Phase 3: Component Mapping Methods
+   * Change Request 002 - Component Tree Traversal and Section Mapping
+   */
+
+  /**
+   * Builds component tree hierarchy starting from a root component
+   * Phase 3.1: Component Tree Traversal
+   * 
+   * Context: Traverses the component hierarchy to identify all components
+   * that belong to a specific UI section (defined by a route).
+   * 
+   * Business Logic: A UI section (tab/page) contains not just the root component,
+   * but all nested components it uses. Example: "Manage" section displays
+   * ClubMembersButton, which contains MemberAvatar, which contains StatusIcon.
+   * All of these belong to the "Manage" section.
+   * 
+   * @param rootComponentName - Name of the root component (e.g., "Manage")
+   * @param allComponents - All available components in the codebase
+   * @param visited - Set of visited component names to prevent cycles
+   * @param depth - Current depth in the tree (root = 0)
+   * @returns ComponentTreeNode | null - Tree node or null if component not found
+   */
+  buildComponentTree(
+    rootComponentName: string,
+    allComponents: ComponentInfo[],
+    visited: Set<string> = new Set(),
+    depth: number = 0
+  ): ComponentTreeNode | null {
+    try {
+      // Prevent infinite recursion from circular dependencies
+      if (visited.has(rootComponentName)) {
+        if (this.logger) {
+          this.logger.logWarning('Circular component dependency detected', {
+            component: rootComponentName,
+            depth
+          });
+        }
+        return null;
+      }
+
+      // Mark as visited
+      visited.add(rootComponentName);
+
+      // Find the component in available components
+      const component = allComponents.find(c => c.name === rootComponentName);
+      if (!component) {
+        if (this.logger && depth === 0) {
+          // Only log warning for root component not found
+          this.logger.logWarning('Root component not found', {
+            component: rootComponentName
+          });
+        }
+        return null;
+      }
+
+      // Extract child components from imports
+      // Business Logic: Only process imports that are React components
+      // (identified by capitalized names and being from local files, not npm packages)
+      const childComponentNames = component.imports
+        .filter(imp => this.isComponentImport(imp))
+        .map(imp => imp.specifiers.map(s => s.name))
+        .flat();
+
+      // Recursively build child trees
+      const children: ComponentTreeNode[] = [];
+      for (const childName of childComponentNames) {
+        const childTree = this.buildComponentTree(
+          childName,
+          allComponents,
+          new Set(visited), // Create new Set to allow component reuse in different branches
+          depth + 1
+        );
+        if (childTree) {
+          children.push(childTree);
+        }
+      }
+
+      // Create tree node
+      const treeNode: ComponentTreeNode = {
+        componentId: this.generateNodeId(), // Generate unique ID for graph node
+        componentName: rootComponentName,
+        file: component.file,
+        children,
+        parentSections: [], // Will be populated by mapComponentsToSections
+        depth,
+        isShared: false // Will be updated if component appears in multiple sections
+      };
+
+      if (this.logger && depth === 0) {
+        this.logger.logInfo('Component tree built', {
+          rootComponent: rootComponentName,
+          totalComponents: this.countTreeNodes(treeNode),
+          maxDepth: this.getTreeDepth(treeNode)
+        });
+      }
+
+      return treeNode;
+
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logError('Error building component tree', {
+          component: rootComponentName,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Checks if an import is likely a React component import
+   * Business Logic: Component imports are:
+   * - Named with PascalCase (first letter uppercase)
+   * - From relative paths (./...) not npm packages
+   * - Not from common non-component libraries (React, lodash, etc.)
+   * 
+   * @param imp - Import information
+   * @returns boolean - True if likely a component import
+   */
+  private isComponentImport(imp: ImportInfo): boolean {
+    // Exclude npm package imports
+    if (!imp.source.startsWith('.') && !imp.source.startsWith('/')) {
+      return false;
+    }
+
+    // Check if any specifier is PascalCase (component convention)
+    return imp.specifiers.some(spec => {
+      const name = spec.name;
+      if (!name || name.length === 0) return false;
+      
+      // Check PascalCase: first letter uppercase, not all uppercase
+      const firstChar = name.charAt(0);
+      return firstChar === firstChar.toUpperCase() && 
+             firstChar !== firstChar.toLowerCase() &&
+             name !== name.toUpperCase();
+    });
+  }
+
+  /**
+   * Counts total nodes in a component tree
+   * @param node - Root node
+   * @returns number - Total node count
+   */
+  private countTreeNodes(node: ComponentTreeNode): number {
+    return 1 + node.children.reduce((sum, child) => sum + this.countTreeNodes(child), 0);
+  }
+
+  /**
+   * Gets maximum depth of a component tree
+   * @param node - Root node
+   * @returns number - Maximum depth
+   */
+  private getTreeDepth(node: ComponentTreeNode): number {
+    if (node.children.length === 0) return node.depth;
+    return Math.max(...node.children.map(child => this.getTreeDepth(child)));
+  }
+
+  /**
+   * Maps components to their parent UI sections
+   * Phase 3.2: Map Components to Sections
+   * 
+   * Context: Creates mappings between UI sections (tabs/pages defined by routes)
+   * and all components they display (including nested components).
+   * 
+   * Business Logic: 
+   * - Each route defines a UI section (e.g., "/manage" → "Manage Section")
+   * - The section's root component and ALL its descendants belong to that section
+   * - Shared components (used in multiple sections) get multiple parent sections
+   * - This enables creation of "displays" edges: [Section] --displays--> [Component]
+   * 
+   * @param routes - Array of route information from router analysis
+   * @param allComponents - All available components in the codebase
+   * @param existingNodes - Existing graph nodes (to find component IDs)
+   * @returns ComponentToSectionMapping[] - Array of component-to-section mappings
+   */
+  mapComponentsToSections(
+    routes: RouteInfo[],
+    allComponents: ComponentInfo[],
+    existingNodes: NodeInfo[]
+  ): ComponentToSectionMapping[] {
+    try {
+      const mappings: Map<string, ComponentToSectionMapping> = new Map();
+
+      // For each route, build component tree and create mappings
+      for (const route of routes) {
+        const sectionId = this.generateSectionId(route.path);
+        
+        // Build component tree for this route
+        const tree = this.buildComponentTree(route.component, allComponents);
+        if (!tree) {
+          if (this.logger) {
+            this.logger.logWarning('Could not build component tree for route', {
+              route: route.path,
+              component: route.component
+            });
+          }
+          continue;
+        }
+
+        // Flatten tree to get all components in this section
+        const componentsInSection = this.flattenComponentTree(tree);
+
+        // Create or update mappings for each component
+        for (const treeNode of componentsInSection) {
+          const componentId = this.findOrCreateComponentId(treeNode.componentName, existingNodes);
+          
+          let mapping = mappings.get(componentId);
+          if (!mapping) {
+            mapping = {
+              componentId,
+              componentName: treeNode.componentName,
+              sectionIds: [],
+              usageLocations: [],
+              isRootComponent: treeNode.componentName === route.component
+            };
+            mappings.set(componentId, mapping);
+          }
+
+          // Add section to this component's parent sections
+          if (!mapping.sectionIds.includes(sectionId)) {
+            mapping.sectionIds.push(sectionId);
+          }
+
+          // Determine usage context
+          const context = this.determineUsageContext(
+            treeNode.componentName,
+            route.component,
+            route.sectionType,
+            treeNode.depth
+          );
+
+          // Add usage location
+          mapping.usageLocations.push({
+            sectionId,
+            context,
+            file: treeNode.file,
+            line: undefined // Could be extracted if needed
+          });
+
+          // Mark as shared if in multiple sections
+          if (mapping.sectionIds.length > 1) {
+            treeNode.isShared = true;
+          }
+        }
+      }
+
+      const mappingArray = Array.from(mappings.values());
+
+      if (this.logger) {
+        this.logger.logInfo('Component-to-section mappings created', {
+          totalMappings: mappingArray.length,
+          sharedComponents: mappingArray.filter(m => m.sectionIds.length > 1).length,
+          totalSections: routes.length
+        });
+      }
+
+      return mappingArray;
+
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logError('Error mapping components to sections', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Flattens a component tree to a flat array
+   * @param node - Root node
+   * @returns ComponentTreeNode[] - Flat array of all nodes
+   */
+  private flattenComponentTree(node: ComponentTreeNode): ComponentTreeNode[] {
+    const result: ComponentTreeNode[] = [node];
+    for (const child of node.children) {
+      result.push(...this.flattenComponentTree(child));
+    }
+    return result;
+  }
+
+  /**
+   * Finds existing component node ID or creates a placeholder
+   * @param componentName - Component name
+   * @param existingNodes - Existing graph nodes
+   * @returns string - Component node ID
+   */
+  private findOrCreateComponentId(componentName: string, existingNodes: NodeInfo[]): string {
+    // Try to find existing component node
+    const existingNode = existingNodes.find(
+      n => n.label === componentName && n.nodeCategory === 'front-end'
+    );
+    
+    if (existingNode) {
+      return existingNode.id;
+    }
+
+    // Create placeholder ID (will be resolved during graph generation)
+    return `component_${componentName}`;
+  }
+
+  /**
+   * Generates a section ID from a route path
+   * Context: Section IDs uniquely identify UI sections in the graph
+   * 
+   * @param path - Route path (e.g., "/manage", "/library/:id")
+   * @returns string - Sanitized section ID (e.g., "section_manage")
+   */
+  private generateSectionId(path: string): string {
+    // Remove leading slash and parameters
+    const sanitized = path
+      .replace(/^\//, '') // Remove leading slash
+      .replace(/:[^/]+/g, 'param') // Replace :id with 'param'
+      .replace(/\//g, '_') // Replace remaining slashes with underscores
+      .replace(/[^a-zA-Z0-9_]/g, '') // Remove non-alphanumeric except underscore
+      .toLowerCase();
+    
+    return `section_${sanitized || 'root'}`;
+  }
+
+  /**
+   * Determines the usage context for a component within a section
+   * Business Logic: Classifies how a component is used:
+   * - 'primary-content': Root component of the section
+   * - 'modal'/'dialog': Component represents a modal/dialog
+   * - 'nested-component': Regular nested component
+   * - 'shared-utility': Shared utility component used across sections
+   * 
+   * @param componentName - Component name
+   * @param rootComponentName - Root component of the section
+   * @param sectionType - Type of the section
+   * @param depth - Depth in component tree
+   * @returns ComponentUsageContext
+   */
+  private determineUsageContext(
+    componentName: string,
+    rootComponentName: string,
+    sectionType: string,
+    depth: number
+  ): ComponentUsageContext {
+    // Root component is primary content
+    if (componentName === rootComponentName) {
+      return 'primary-content';
+    }
+
+    // Check component name for modal/dialog patterns
+    const lowerName = componentName.toLowerCase();
+    if (lowerName.includes('modal')) {
+      return 'modal';
+    }
+    if (lowerName.includes('dialog')) {
+      return 'dialog';
+    }
+
+    // Deep nesting or utility suffix suggests shared utility
+    if (depth > 3 || lowerName.includes('util') || lowerName.includes('helper')) {
+      return 'shared-utility';
+    }
+
+    // Default: nested component
+    return 'nested-component';
+  }
+
+  /**
+   * Creates "displays" edges from UI sections to components
+   * Phase 3.5: Create "displays" Edges
+   * 
+   * Context: Links UI section nodes to all components they display.
+   * This creates the hierarchical "section → component" relationships
+   * that enable filtering by UI section in the visualizer.
+   * 
+   * Business Logic:
+   * - Each section gets edges to ALL components in its tree
+   * - Shared components get multiple edges (one from each section)
+   * - Edge properties include usage context for additional filtering
+   * 
+   * @param sectionNodes - Section nodes created from routes
+   * @param mappings - Component-to-section mappings
+   * @returns EdgeInfo[] - Array of "displays" edges
+   */
+  createDisplaysEdges(
+    sectionNodes: NodeInfo[],
+    mappings: ComponentToSectionMapping[]
+  ): EdgeInfo[] {
+    try {
+      const edges: EdgeInfo[] = [];
+
+      for (const mapping of mappings) {
+        for (const sectionId of mapping.sectionIds) {
+          // Find the section node
+          const sectionNode = sectionNodes.find(n => n.id === sectionId);
+          if (!sectionNode) {
+            if (this.logger) {
+              this.logger.logWarning('Section node not found for mapping', {
+                sectionId,
+                component: mapping.componentName
+              });
+            }
+            continue;
+          }
+
+          // Find usage location for this section
+          const usageLocation = mapping.usageLocations.find(
+            loc => loc.sectionId === sectionId
+          );
+
+          // Create "displays" edge
+          const edge: EdgeInfo = {
+            id: this.generateEdgeId(),
+            source: sectionId,
+            target: mapping.componentId,
+            relationship: 'displays',
+            properties: {
+              context: usageLocation?.context || 'nested-component',
+              isRootComponent: mapping.isRootComponent,
+              isShared: mapping.sectionIds.length > 1,
+              file: usageLocation?.file
+            }
+          };
+
+          edges.push(edge);
+        }
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('"displays" edges created', {
+          totalEdges: edges.length,
+          sections: sectionNodes.length,
+          mappings: mappings.length
+        });
+      }
+
+      return edges;
+
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logError('Error creating "displays" edges', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return [];
+    }
   }
 }
 

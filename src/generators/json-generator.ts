@@ -22,7 +22,9 @@ import {
   DeadCodeInfo,
   AnalysisError,
   NodeInfo,
-  EdgeInfo
+  EdgeInfo,
+  // Phase 3: Component Mapping (Change Request 002)
+  RouteInfo
 } from '../types/index.js';
 import { AnalysisLogger } from '../analyzers/analysis-logger.js';
 
@@ -555,6 +557,126 @@ export class JSONGeneratorImpl {
   ): string {
     const indent = options.compact ? 0 : (options.indent || 2);
     return JSON.stringify(data, null, indent);
+  }
+
+  /**
+   * Phase 3: Section Node Creation
+   * Change Request 002 - Creates UI section nodes from route information
+   */
+
+  /**
+   * Creates UI section nodes from route information
+   * Phase 3.4: Create Section Nodes
+   * 
+   * Context: Generates graph nodes for UI sections (tabs, pages, menus)
+   * defined by routing configuration. These nodes represent major navigation
+   * sections that group related components.
+   * 
+   * Business Logic:
+   * - Each route becomes a UI section node (e.g., "/manage" → "Manage Section")
+   * - Section nodes use nodeType: "ui-section" to distinguish from components
+   * - Section nodes use nodeCategory: "front-end" (leftmost in hierarchical layout)
+   * - Section nodes use datatype: "array" (conceptually contain multiple components)
+   * - These nodes will be connected to components via "displays" edges
+   * 
+   * @param routes - Array of route information from router analysis
+   * @returns NodeInfo[] - Array of section nodes ready for graph inclusion
+   */
+  createSectionNodes(routes: RouteInfo[]): NodeInfo[] {
+    try {
+      const sectionNodes: NodeInfo[] = [];
+
+      for (const route of routes) {
+        // Generate section ID from route path
+        const sectionId = this.generateSectionIdFromPath(route.path);
+
+        // Create section node
+        const sectionNode: NodeInfo = {
+          id: sectionId,
+          label: route.label || route.component || this.extractLabelFromPath(route.path),
+          nodeType: 'ui-section', // Phase 3: New node type for UI sections
+          nodeCategory: 'front-end', // Leftmost in hierarchical layout
+          datatype: 'array', // Sections are containers, like arrays holding components
+          liveCodeScore: 100, // UI sections are always live (part of navigation)
+          file: route.file,
+          line: route.line,
+          column: route.column,
+          codeOwnership: 'internal', // Routes are part of custom application code
+          properties: {
+            routePath: route.path,
+            routeComponent: route.component,
+            sectionType: route.sectionType,
+            metadata: route.metadata || {}
+          }
+        };
+
+        sectionNodes.push(sectionNode);
+      }
+
+      if (this.logger) {
+        this.logger.logInfo('UI section nodes created', {
+          totalSections: sectionNodes.length,
+          sectionTypes: sectionNodes.reduce((acc, node) => {
+            const type = node.properties.sectionType as string;
+            acc[type] = (acc[type] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>)
+        });
+      }
+
+      return sectionNodes;
+
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logError('Error creating section nodes', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return [];
+    }
+  }
+
+  /**
+   * Generates a section ID from a route path
+   * Business Logic: Creates unique, sanitized IDs for UI sections
+   * 
+   * @param path - Route path (e.g., "/manage", "/library/:id")
+   * @returns string - Sanitized section ID (e.g., "section_manage")
+   */
+  private generateSectionIdFromPath(path: string): string {
+    // Remove leading slash and parameters
+    const sanitized = path
+      .replace(/^\//, '') // Remove leading slash
+      .replace(/:[^/]+/g, 'param') // Replace :id with 'param'
+      .replace(/\//g, '_') // Replace remaining slashes with underscores
+      .replace(/[^a-zA-Z0-9_]/g, '') // Remove non-alphanumeric except underscore
+      .toLowerCase();
+    
+    return `section_${sanitized || 'root'}`;
+  }
+
+  /**
+   * Extracts a human-readable label from a route path
+   * Business Logic: Converts paths to readable labels for visualization
+   * 
+   * @param path - Route path (e.g., "/manage", "/club-members")
+   * @returns string - Human-readable label (e.g., "Manage", "Club Members")
+   */
+  private extractLabelFromPath(path: string): string {
+    // Remove leading slash and parameters
+    let label = path
+      .replace(/^\//, '')
+      .replace(/:[^/]+/g, '')
+      .replace(/\//g, ' ')
+      .trim();
+
+    // Convert kebab-case or snake_case to Title Case
+    label = label
+      .split(/[-_\s]+/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+
+    return label || 'Root';
   }
 }
 

@@ -11,7 +11,7 @@ import { ConfigurationManager } from './analyzers/configuration-manager.js';
 import { ASTParserImpl } from './analyzers/ast-parser.js';
 import { DependencyAnalyzerImpl } from './analyzers/dependency-analyser.js';
 import { JSONGeneratorImpl } from './generators/json-generator.js';
-import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo, DependencyGraph } from './types/index.js';
+import { ProgressInfo, CLIAnalysisOptions, FileScanProgress, FileInfo, ComponentInfo, DependencyGraph, RouteInfo } from './types/index.js';
 import { generateOutputPath, generateDeadCodeReportPath } from './utils/url-utils.js';
 
 /**
@@ -194,11 +194,11 @@ class Code2GraphCLI {
 
       // Phase 3.3: Basic AST Parser - Parse files and extract informative elements
       console.log('\n🔍 Phase 3.3: Basic AST Parser - Analyzing code structure...');
-      const components = await this.performASTAnalysis(scanResult.files);
+      const { components, routes } = await this.performASTAnalysis(scanResult.files);
       
       // Phase 3.4: Dependency Analyzer - Build dependency graph
       console.log('\n🔗 Phase 3.4: Dependency Analyzer - Building dependency graph...');
-      const dependencyGraph = await this.performDependencyAnalysis(components);
+      const dependencyGraph = await this.performDependencyAnalysis(components, routes);
       
       // Phase 5.1: JSON Output Generator - Generate and export JSON output
       console.log('\n📊 Phase 5.1: JSON Output Generator - Generating output...');
@@ -255,11 +255,16 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
   /**
    * Performs AST analysis on scanned files
    * Phase 3.3: Basic AST Parser implementation
+   * Phase 4: Router Detection - Integrated router file detection and route extraction
+   * 
+   * Change Request 002 - Phase 4: Integration
+   * Context: Added router detection to discover UI sections from routing configuration
+   * Business Logic: Detects router files and extracts routes to enable UI section node creation
    * 
    * @param files - Array of files to analyze
-   * @returns Promise<ComponentInfo[]> - Array of component information
+   * @returns Promise<{ components: ComponentInfo[]; routes: RouteInfo[] }> - Components and routes
    */
-  private async performASTAnalysis(files: FileInfo[]): Promise<ComponentInfo[]> {
+  private async performASTAnalysis(files: FileInfo[]): Promise<{ components: ComponentInfo[]; routes: RouteInfo[] }> {
     const typescriptFiles = files.filter(file => 
       file.extension === '.ts' || 
       file.extension === '.tsx' || 
@@ -397,22 +402,94 @@ For more information, visit: https://github.com/NickVanMaele-vonk/code2graph
       componentsCreated: components.length
     });
 
-    return components;
+    // Change Request 002 - Phase 4.1: Router Detection and Route Extraction
+    // Context: Detect router files and extract route configurations for UI section discovery
+    // Business Logic: Routes define the first-level UI sections (tabs, pages) that "display" components
+    console.log('\n🗺️  Phase 4.1: Router Detection - Analyzing routing configuration...');
+    let allRoutes: RouteInfo[] = [];
+    let routerFilesDetected = 0;
+
+    try {
+      for (const file of typescriptFiles) {
+        try {
+          const ast = await this.astParser.parseFile(file.path);
+          const isRouterFile = this.astParser.detectRouterFile(ast, file.path);
+          
+          if (isRouterFile) {
+            routerFilesDetected++;
+            console.log(`   🗺️  Found router file: ${file.name}`);
+            
+            // Extract routes from this router file
+            const routes = this.astParser.extractRoutes(ast, file.path);
+            allRoutes = allRoutes.concat(routes);
+            
+            await this.logger.logInfo(`Router file detected: ${file.name}`, {
+              routesExtracted: routes.length,
+              file: file.path
+            });
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(`   ⚠️  Error analyzing ${file.name} for routing: ${errorMessage}`);
+          await this.logger.logWarning(`Failed to analyze file for routing: ${file.name}`, {
+            error: errorMessage,
+            file: file.path
+          });
+        }
+      }
+
+      console.log(`✅ Router detection completed:`);
+      console.log(`   🗺️  Router files detected: ${routerFilesDetected}`);
+      console.log(`   📍 Total routes extracted: ${allRoutes.length}`);
+      
+      if (allRoutes.length > 0) {
+        const routeTypes = allRoutes.reduce((acc, route) => {
+          acc[route.sectionType] = (acc[route.sectionType] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        console.log(`   📊 Route types:`, routeTypes);
+      }
+
+      await this.logger.logInfo('Router detection summary', {
+        routerFilesDetected,
+        totalRoutes: allRoutes.length,
+        routeTypes: allRoutes.reduce((acc, route) => {
+          acc[route.sectionType] = (acc[route.sectionType] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>)
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️  Router detection failed: ${errorMessage}`);
+      await this.logger.logWarning('Router detection failed', {
+        error: errorMessage
+      });
+    }
+
+    return { components, routes: allRoutes };
   }
 
   /**
    * Performs dependency analysis on components
    * Phase 3.4: Dependency Analyzer implementation
+   * Phase 4.2: Integration - Pass routes to dependency analyzer for UI section node creation
+   * 
+   * Change Request 002 - Phase 4.2: Integration
+   * Context: Routes are used to create UI section nodes and map components to sections
+   * Business Logic: Routes define the structure of UI sections that "display" components
    * 
    * @param components - Array of component information to analyze
-   * @returns Promise<DependencyGraph> - Complete dependency graph
+   * @param routes - Array of route information for UI section discovery
+   * @returns Promise<DependencyGraph> - Complete dependency graph with UI sections
    */
-  private async performDependencyAnalysis(components: ComponentInfo[]): Promise<DependencyGraph> {
+  private async performDependencyAnalysis(components: ComponentInfo[], routes: RouteInfo[]): Promise<DependencyGraph> {
     try {
-      console.log(`📊 Analyzing dependencies for ${components.length} components...`);
+      console.log(`📊 Analyzing dependencies for ${components.length} components and ${routes.length} routes...`);
 
-      // Build dependency graph
-      const dependencyGraph = this.dependencyAnalyzer.buildDependencyGraph(components);
+      // Build dependency graph (now includes UI sections and "displays" edges)
+      const dependencyGraph = this.dependencyAnalyzer.buildDependencyGraph(components, routes);
       
       console.log(`✅ Dependency graph created:`);
       console.log(`   📊 Total nodes: ${dependencyGraph.nodes.length}`);

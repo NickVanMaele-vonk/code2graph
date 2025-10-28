@@ -26,7 +26,12 @@ import {
   InformativeElementInfo,
   ComponentDefinitionInfo,
   AnalysisError,
-  EventHandler // ADDED (Phase A): For structured event handler objects
+  EventHandler, // ADDED (Phase A): For structured event handler objects
+  RouteInfo,
+  RouterDetectionPattern,
+  NavigationElementInfo,
+  RouterFramework,
+  SectionType
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
 
@@ -37,6 +42,107 @@ import { AnalysisLogger } from './analysis-logger.js';
  */
 export class ASTParserImpl {
   private logger?: AnalysisLogger;
+  
+  /**
+   * Router detection patterns for different frameworks
+   * Phase 2: Router Detection (Change Request 002)
+   */
+  private routerPatterns: RouterDetectionPattern[] = [
+    {
+      framework: 'react-router',
+      routerLibraries: ['react-router-dom', 'react-router'],
+      routePatterns: {
+        componentProp: ['component', 'element', 'render'],
+        pathProp: ['path', 'to'],
+        nodeTypes: ['JSXElement'],
+        elementNames: ['Route', 'Routes', 'Switch']
+      },
+      priority: 10
+    },
+    {
+      framework: 'wouter',
+      routerLibraries: ['wouter'],
+      routePatterns: {
+        componentProp: ['component'],
+        pathProp: ['path'],
+        nodeTypes: ['JSXElement'],
+        elementNames: ['Route', 'Router', 'Switch']
+      },
+      priority: 9
+    },
+    {
+      framework: 'next-js',
+      routerLibraries: ['next/router', 'next/navigation'],
+      routePatterns: {
+        componentProp: ['component'],
+        pathProp: ['path', 'href'],
+        nodeTypes: ['JSXElement', 'ObjectExpression'],
+        elementNames: ['Link']
+      },
+      priority: 8
+    }
+  ];
+
+  /**
+   * Known interactive component types
+   * Phase 5: Component Type Recognition (Change Request 002)
+   * 
+   * These components represent UI elements that users interact with,
+   * regardless of whether they have explicit event handlers or IDs.
+   * This enables capture of modern composition patterns where buttons
+   * are passed as children to wrapper components (Dialog, Dropdown, etc.)
+   * that manage the event handling.
+   */
+  private interactiveComponentTypes: Set<string> = new Set([
+    // Standard HTML interactive elements
+    'button',
+    'a',
+    'input',
+    'select',
+    'textarea',
+    'form',
+    
+    // Common UI library button components
+    'Button',
+    'IconButton',
+    'FloatingActionButton',
+    'Fab',
+    
+    // Link and navigation components
+    'Link',
+    'NavLink',
+    'RouterLink',
+    'Anchor',
+    
+    // Input components
+    'TextField',
+    'Input',
+    'TextInput',
+    'Checkbox',
+    'Radio',
+    'Switch',
+    'Toggle',
+    'Select',
+    'Dropdown',
+    'Combobox',
+    'Autocomplete',
+    
+    // Other interactive components
+    'Slider',
+    'DatePicker',
+    'TimePicker',
+    'ColorPicker',
+    'FileUpload',
+    'Upload',
+    
+    // Trigger components for dialogs, modals, etc.
+    'DialogTrigger',
+    'ModalTrigger',
+    'PopoverTrigger',
+    'TooltipTrigger',
+    'DropdownTrigger',
+    'MenuTrigger'
+  ]);
 
   /**
    * Constructor initializes the AST parser
@@ -383,15 +489,16 @@ export class ASTParserImpl {
         enter: (path) => {
           const hasBinding = this.hasDataBinding(path.node);
           const hasHandlers = this.hasEventHandlers(path.node);
+          const isInteractive = this.isInteractiveComponent(path.node);
         
-        // Phase B: Only create ONE element per JSX node, even if it has both binding and handlers
-        if (hasBinding || hasHandlers) {
+        // Phase B & Phase 5: Create element if it has binding, handlers, OR is a known interactive component
+        if (hasBinding || hasHandlers || isInteractive) {
           // Semantic Filtering: Extract semantic identifier for node creation filtering
           const semanticIdentifier = this.extractSemanticIdentifier(path.node);
           
           const elementInfo: InformativeElementInfo = {
-            // Prioritize 'input' type if has event handlers (user interaction is primary purpose)
-            type: hasHandlers ? 'input' : 'display',
+            // Prioritize 'input' type if has event handlers or is interactive component
+            type: (hasHandlers || isInteractive) ? 'input' : 'display',
             name: this.getJSXElementName(path.node),
             elementType: 'JSXElement',
             props: this.extractJSXProps(path.node),
@@ -927,6 +1034,18 @@ export class ASTParserImpl {
   }
 
   /**
+   * Checks if a JSX element is a known interactive component type
+   * Phase 5: Component Type Recognition (Change Request 002)
+   * 
+   * @param node - The JSX element node
+   * @returns boolean - True if the element is a known interactive component
+   */
+  private isInteractiveComponent(node: t.JSXElement): boolean {
+    const elementName = this.getJSXElementName(node);
+    return this.interactiveComponentTypes.has(elementName);
+  }
+
+  /**
    * Extracts event handlers from a JSX element
    * 
    * Business Logic (Phase G - Solution 2A):
@@ -1035,10 +1154,14 @@ export class ASTParserImpl {
       return idAttr.value.value;
     }
     
-    // Priority 4 (Fallback): Extract short text content
-    const textContent = this.extractTextContent(node);
-    if (textContent) {
-      return textContent;
+    // Priority 4 (Fallback): Extract short text content for interactive components only
+    // Only extract text content for known interactive components (Button, Link, etc.)
+    // Generic HTML elements (div, span) should not use text content as semantic identifier
+    if (this.isInteractiveComponent(node)) {
+      const textContent = this.extractTextContent(node);
+      if (textContent) {
+        return textContent;
+      }
     }
     
     // No semantic identifier found
@@ -1070,20 +1193,39 @@ export class ASTParserImpl {
    * @returns string | undefined - Text content if suitable, undefined otherwise
    */
   private extractTextContent(node: t.JSXElement): string | undefined {
-    // Only extract if there's exactly one child
-    if (!node.children || node.children.length !== 1) {
+    if (!node.children || node.children.length === 0) {
       return undefined;
     }
     
-    const child = node.children[0];
+    // Strategy 1: Single text child (most common case)
+    if (node.children.length === 1) {
+      const child = node.children[0];
+      if (t.isJSXText(child)) {
+        const text = child.value.trim();
+        if (text && text.length > 0 && text.length <= 30) {
+          return text;
+        }
+      }
+    }
     
-    // Check if child is JSXText (simple text node)
-    if (t.isJSXText(child)) {
-      const text = child.value.trim();
-      
-      // Only use text if it's short (≤ 30 characters) and not empty
-      if (text && text.length > 0 && text.length <= 30) {
-        return text;
+    // Strategy 2: Multiple children - look for text content
+    // Common pattern: <Button><Icon />Text</Button> or <Button>Text<Icon /></Button>
+    const textParts: string[] = [];
+    
+    for (const child of node.children) {
+      if (t.isJSXText(child)) {
+        const text = child.value.trim();
+        if (text && text.length > 0) {
+          textParts.push(text);
+        }
+      }
+    }
+    
+    // If we found text parts, join them and return if reasonable length
+    if (textParts.length > 0) {
+      const combinedText = textParts.join(' ').trim();
+      if (combinedText.length > 0 && combinedText.length <= 30) {
+        return combinedText;
       }
     }
     
@@ -1536,6 +1678,647 @@ export class ASTParserImpl {
     }
 
     return false;
+  }
+
+  /**
+   * Phase 2: Router Detection Methods
+   * Change Request 002 - Router Detection
+   */
+
+  /**
+   * Detects if a file contains router configuration
+   * Checks for router library imports and routing patterns
+   * 
+   * @param ast - The AST to analyze
+   * @param filePath - Path to the file being analyzed
+   * @returns Router framework detected or null
+   */
+  detectRouterFile(ast: ASTNode, filePath: string): RouterFramework | null {
+    try {
+      // Extract imports from the file
+      const imports = this.extractImports(ast);
+      
+      // Check each router pattern
+      for (const pattern of this.routerPatterns.sort((a, b) => b.priority - a.priority)) {
+        // Check if file imports any router libraries
+        const hasRouterImport = imports.some(imp =>
+          pattern.routerLibraries.some(lib => imp.source.includes(lib))
+        );
+        
+        if (hasRouterImport) {
+          // Verify the file actually uses routing patterns
+          const hasRoutingElements = this.hasRoutingElements(ast, pattern);
+          if (hasRoutingElements) {
+            if (this.logger) {
+              this.logger.logInfo('Router file detected', {
+                file: filePath,
+                framework: pattern.framework,
+                imports: imports.filter(imp => 
+                  pattern.routerLibraries.some(lib => imp.source.includes(lib))
+                ).map(imp => imp.source)
+              });
+            }
+            return pattern.framework;
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logWarning('Error detecting router file', {
+          file: filePath,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Checks if AST contains routing elements based on pattern
+   * 
+   * @param ast - The AST to analyze
+   * @param pattern - Router detection pattern to match
+   * @returns true if routing elements found
+   */
+  private hasRoutingElements(ast: ASTNode, pattern: RouterDetectionPattern): boolean {
+    let hasRouting = false;
+    
+    traverseFunction(ast as t.Node, {
+      JSXElement(path) {
+        if (!pattern.routePatterns.nodeTypes.includes('JSXElement')) return;
+        
+        const openingElement = path.node.openingElement;
+        if (t.isJSXIdentifier(openingElement.name)) {
+          const elementName = openingElement.name.name;
+          if (pattern.routePatterns.elementNames.includes(elementName)) {
+            hasRouting = true;
+            path.stop();
+          }
+        }
+      },
+      
+      ObjectExpression(path) {
+        if (!pattern.routePatterns.nodeTypes.includes('ObjectExpression')) return;
+        
+        // Check for route configuration objects
+        const properties = path.node.properties;
+        const hasPath = properties.some(prop =>
+          t.isObjectProperty(prop) &&
+          t.isIdentifier(prop.key) &&
+          pattern.routePatterns.pathProp.includes(prop.key.name)
+        );
+        
+        const hasComponent = properties.some(prop =>
+          t.isObjectProperty(prop) &&
+          t.isIdentifier(prop.key) &&
+          pattern.routePatterns.componentProp.includes(prop.key.name)
+        );
+        
+        if (hasPath && hasComponent) {
+          hasRouting = true;
+          path.stop();
+        }
+      }
+    });
+    
+    return hasRouting;
+  }
+
+  /**
+   * Extracts route definitions from AST
+   * Phase 2.2: Route Extraction Logic
+   * 
+   * @param ast - The AST to analyze
+   * @param filePath - Path to the file being analyzed
+   * @param framework - Detected router framework
+   * @returns Array of route information
+   */
+  extractRoutes(ast: ASTNode, filePath: string, framework?: RouterFramework): RouteInfo[] {
+    const routes: RouteInfo[] = [];
+    
+    try {
+      // Detect framework if not provided
+      const detectedFramework = framework || this.detectRouterFile(ast, filePath);
+      if (!detectedFramework) {
+        return routes;
+      }
+      
+      const pattern = this.routerPatterns.find(p => p.framework === detectedFramework);
+      if (!pattern) {
+        return routes;
+      }
+      
+      // Extract routes from JSX elements
+      traverseFunction(ast as t.Node, {
+        JSXElement: (path) => {
+          const route = this.extractRouteFromJSXElement(path.node, pattern, filePath);
+          if (route) {
+            routes.push(route);
+          }
+        }
+      });
+      
+      // Extract routes from configuration objects
+      traverseFunction(ast as t.Node, {
+        VariableDeclarator: (path) => {
+          if (t.isArrayExpression(path.node.init)) {
+            // Check if it's a routes array
+            const arrayRoutes = this.extractRoutesFromArray(path.node.init, pattern, filePath);
+            routes.push(...arrayRoutes);
+          }
+        },
+        
+        ObjectExpression: (path) => {
+          const route = this.extractRouteFromObjectExpression(path.node, pattern, filePath);
+          if (route) {
+            routes.push(route);
+          }
+        }
+      });
+      
+      if (this.logger && routes.length > 0) {
+        this.logger.logInfo('Routes extracted', {
+          file: filePath,
+          framework: detectedFramework,
+          routeCount: routes.length,
+          routes: routes.map(r => ({ path: r.path, component: r.component }))
+        });
+      }
+      
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logWarning('Error extracting routes', {
+          file: filePath,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    
+    return routes;
+  }
+
+  /**
+   * Extracts component name from complex expressions
+   * Change Request 002 - Phase 4 Enhancement: Support arrow functions and conditionals
+   * Context: Routes often use arrow functions and conditional rendering
+   * Business Logic: Extract actual component name from wrapper expressions
+   * 
+   * @param expression - Expression node to analyze
+   * @returns Component name or null
+   */
+  private extractComponentFromExpression(expression: t.Expression | t.JSXElement): string | null {
+    // Simple identifier: component={Home}
+    if (t.isIdentifier(expression)) {
+      return expression.name;
+    }
+    
+    // Inline JSX element: component={<Home />}
+    if (t.isJSXElement(expression)) {
+      if (t.isJSXIdentifier(expression.openingElement.name)) {
+        return expression.openingElement.name.name;
+      }
+    }
+    
+    // Change Request 002 - Phase 4: Arrow function component
+    // Pattern: component={() => <Layout><Home /></Layout>}
+    if (t.isArrowFunctionExpression(expression) || t.isFunctionExpression(expression)) {
+      const body = expression.body;
+      
+      // Body is JSX element: () => <Home />
+      if (t.isJSXElement(body)) {
+        return this.extractComponentFromJSX(body);
+      }
+      
+      // Body is block statement: () => { return <Home /> }
+      if (t.isBlockStatement(body)) {
+        for (const statement of body.body) {
+          if (t.isReturnStatement(statement) && statement.argument) {
+            if (t.isJSXElement(statement.argument)) {
+              return this.extractComponentFromJSX(statement.argument);
+            }
+          }
+        }
+      }
+      
+      // Body is parenthesized expression: () => (<Home />)
+      if (t.isParenthesizedExpression(body)) {
+        if (t.isJSXElement(body.expression)) {
+          return this.extractComponentFromJSX(body.expression);
+        }
+      }
+    }
+    
+    // Change Request 002 - Phase 4: Conditional expression
+    // Pattern: component={isAuth ? Home : Landing}
+    if (t.isConditionalExpression(expression)) {
+      // Try consequent first (the "true" branch)
+      const consequentComponent = this.extractComponentFromExpression(expression.consequent);
+      if (consequentComponent) {
+        return consequentComponent;
+      }
+      
+      // Fall back to alternate (the "false" branch)
+      return this.extractComponentFromExpression(expression.alternate);
+    }
+    
+    // Logical expression: component={isAuth && Home}
+    if (t.isLogicalExpression(expression)) {
+      return this.extractComponentFromExpression(expression.right);
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Extracts component name from JSX element
+   * Helper for component extraction from nested JSX structures
+   * 
+   * @param jsxElement - JSX element node
+   * @returns Component name or null
+   */
+  private extractComponentFromJSX(jsxElement: t.JSXElement): string | null {
+    const openingElement = jsxElement.openingElement;
+    
+    if (!t.isJSXIdentifier(openingElement.name)) {
+      return null;
+    }
+    
+    const elementName = openingElement.name.name;
+    
+    // Skip wrapper components like Layout, common wrappers
+    const wrapperComponents = ['Layout', 'div', 'Fragment', 'React.Fragment'];
+    if (wrapperComponents.includes(elementName)) {
+      // Look for child components
+      for (const child of jsxElement.children) {
+        if (t.isJSXElement(child)) {
+          const childComponent = this.extractComponentFromJSX(child);
+          if (childComponent && !wrapperComponents.includes(childComponent)) {
+            return childComponent;
+          }
+        }
+      }
+    }
+    
+    return elementName;
+  }
+
+  /**
+   * Extracts route from JSX element
+   * 
+   * @param element - JSX element node
+   * @param pattern - Router detection pattern
+   * @param filePath - File path
+   * @returns RouteInfo or null
+   */
+  private extractRouteFromJSXElement(
+    element: t.JSXElement,
+    pattern: RouterDetectionPattern,
+    filePath: string
+  ): RouteInfo | null {
+    const openingElement = element.openingElement;
+    
+    if (!t.isJSXIdentifier(openingElement.name)) {
+      return null;
+    }
+    
+    const elementName = openingElement.name.name;
+    if (!pattern.routePatterns.elementNames.includes(elementName)) {
+      return null;
+    }
+    
+    // Extract path and component from attributes
+    let path: string | null = null;
+    let component: string | null = null;
+    const metadata: Record<string, unknown> = {};
+    
+    for (const attr of openingElement.attributes) {
+      if (!t.isJSXAttribute(attr) || !t.isJSXIdentifier(attr.name)) {
+        continue;
+      }
+      
+      const attrName = attr.name.name;
+      
+      // Extract path
+      if (pattern.routePatterns.pathProp.includes(attrName)) {
+        if (t.isStringLiteral(attr.value)) {
+          path = attr.value.value;
+        }
+      }
+      
+      // Extract component
+      // Change Request 002 - Phase 4: Enhanced component extraction
+      if (pattern.routePatterns.componentProp.includes(attrName)) {
+        if (t.isJSXExpressionContainer(attr.value)) {
+          const expression = attr.value.expression;
+          // Root cause fix: JSXEmptyExpression (empty braces {}) is not a valid component
+          // Skip empty expressions and only process actual Expression nodes
+          if (!t.isJSXEmptyExpression(expression)) {
+            // Use enhanced extraction method to handle complex expressions
+            component = this.extractComponentFromExpression(expression);
+          }
+        } else if (t.isStringLiteral(attr.value)) {
+          component = attr.value.value;
+        }
+      }
+      
+      // Collect other attributes as metadata
+      if (t.isStringLiteral(attr.value)) {
+        metadata[attrName] = attr.value.value;
+      } else if (t.isJSXExpressionContainer(attr.value) && t.isIdentifier(attr.value.expression)) {
+        metadata[attrName] = attr.value.expression.name;
+      }
+    }
+    
+    if (!path || !component) {
+      return null;
+    }
+    
+    return {
+      path,
+      component,
+      label: component,
+      file: filePath,
+      line: openingElement.loc?.start.line,
+      column: openingElement.loc?.start.column,
+      sectionType: this.inferSectionType(path),
+      metadata
+    };
+  }
+
+  /**
+   * Extracts routes from array expression
+   * 
+   * @param arrayExpr - Array expression node
+   * @param pattern - Router detection pattern
+   * @param filePath - File path
+   * @returns Array of RouteInfo
+   */
+  private extractRoutesFromArray(
+    arrayExpr: t.ArrayExpression,
+    pattern: RouterDetectionPattern,
+    filePath: string
+  ): RouteInfo[] {
+    const routes: RouteInfo[] = [];
+    
+    for (const element of arrayExpr.elements) {
+      if (t.isObjectExpression(element)) {
+        const route = this.extractRouteFromObjectExpression(element, pattern, filePath);
+        if (route) {
+          routes.push(route);
+        }
+      }
+    }
+    
+    return routes;
+  }
+
+  /**
+   * Extracts route from object expression
+   * 
+   * @param objExpr - Object expression node
+   * @param pattern - Router detection pattern
+   * @param filePath - File path
+   * @returns RouteInfo or null
+   */
+  private extractRouteFromObjectExpression(
+    objExpr: t.ObjectExpression,
+    pattern: RouterDetectionPattern,
+    filePath: string
+  ): RouteInfo | null {
+    let path: string | null = null;
+    let component: string | null = null;
+    const metadata: Record<string, unknown> = {};
+    
+    for (const prop of objExpr.properties) {
+      if (!t.isObjectProperty(prop) || !t.isIdentifier(prop.key)) {
+        continue;
+      }
+      
+      const key = prop.key.name;
+      
+      // Extract path
+      if (pattern.routePatterns.pathProp.includes(key)) {
+        if (t.isStringLiteral(prop.value)) {
+          path = prop.value.value;
+        }
+      }
+      
+      // Extract component
+      if (pattern.routePatterns.componentProp.includes(key)) {
+        if (t.isIdentifier(prop.value)) {
+          component = prop.value.name;
+        } else if (t.isStringLiteral(prop.value)) {
+          component = prop.value.value;
+        }
+      }
+      
+      // Collect metadata
+      if (t.isStringLiteral(prop.value)) {
+        metadata[key] = prop.value.value;
+      } else if (t.isIdentifier(prop.value)) {
+        metadata[key] = prop.value.name;
+      }
+    }
+    
+    if (!path || !component) {
+      return null;
+    }
+    
+    return {
+      path,
+      component,
+      label: component,
+      file: filePath,
+      line: objExpr.loc?.start.line,
+      column: objExpr.loc?.start.column,
+      sectionType: this.inferSectionType(path),
+      metadata
+    };
+  }
+
+  /**
+   * Infers section type from route path
+   * 
+   * @param path - Route path
+   * @returns Inferred section type
+   */
+  private inferSectionType(path: string): SectionType {
+    // Infer section type based on path patterns
+    const lowerPath = path.toLowerCase();
+    
+    if (lowerPath.includes('modal') || lowerPath.includes('dialog')) {
+      return 'modal';
+    }
+    
+    if (lowerPath.includes('panel') || lowerPath.includes('sidebar')) {
+      return 'panel';
+    }
+    
+    // Check for nested paths (likely pages/views)
+    if (path.includes('/') && path.split('/').length > 2) {
+      return 'page';
+    }
+    
+    // Default to tab for top-level routes
+    return 'tab';
+  }
+
+  /**
+   * Extracts navigation elements from AST
+   * Phase 2.3: Navigation UI Detection
+   * 
+   * @param ast - The AST to analyze
+   * @param filePath - Path to the file being analyzed
+   * @returns Array of navigation element information
+   */
+  extractNavigationElements(ast: ASTNode, filePath: string): NavigationElementInfo[] {
+    const navElements: NavigationElementInfo[] = [];
+    
+    try {
+      traverseFunction(ast as t.Node, {
+        JSXElement: (path) => {
+          const element = path.node;
+          const openingElement = element.openingElement;
+          
+          if (!t.isJSXIdentifier(openingElement.name)) {
+            return;
+          }
+          
+          const elementName = openingElement.name.name.toLowerCase();
+          
+          // Check for navigation elements
+          if (['button', 'a', 'link'].includes(elementName)) {
+            const navElement = this.extractNavigationFromJSXElement(element, filePath);
+            if (navElement) {
+              navElements.push(navElement);
+            }
+          }
+        }
+      });
+      
+      if (this.logger && navElements.length > 0) {
+        this.logger.logInfo('Navigation elements extracted', {
+          file: filePath,
+          count: navElements.length
+        });
+      }
+      
+    } catch (error) {
+      if (this.logger) {
+        this.logger.logWarning('Error extracting navigation elements', {
+          file: filePath,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    
+    return navElements;
+  }
+
+  /**
+   * Extracts navigation information from JSX element
+   * 
+   * @param element - JSX element node
+   * @param filePath - File path
+   * @returns NavigationElementInfo or null
+   */
+  private extractNavigationFromJSXElement(
+    element: t.JSXElement,
+    filePath: string
+  ): NavigationElementInfo | null {
+    const openingElement = element.openingElement;
+    
+    if (!t.isJSXIdentifier(openingElement.name)) {
+      return null;
+    }
+    
+    const elementName = openingElement.name.name.toLowerCase();
+    let target: string | undefined;
+    let eventHandler: string | undefined;
+    let name = '';
+    const metadata: Record<string, unknown> = {};
+    
+    // Extract attributes
+    for (const attr of openingElement.attributes) {
+      if (!t.isJSXAttribute(attr) || !t.isJSXIdentifier(attr.name)) {
+        continue;
+      }
+      
+      const attrName = attr.name.name;
+      
+      // Extract navigation target
+      if (['to', 'href', 'path'].includes(attrName)) {
+        if (t.isStringLiteral(attr.value)) {
+          target = attr.value.value;
+        } else if (t.isJSXExpressionContainer(attr.value)) {
+          const expr = attr.value.expression;
+          if (t.isStringLiteral(expr)) {
+            target = expr.value;
+          } else if (t.isTemplateLiteral(expr)) {
+            // Handle template literals for dynamic paths
+            target = expr.quasis.map(q => q.value.raw).join('${...}');
+          }
+        }
+      }
+      
+      // Extract click handler
+      if (attrName === 'onClick') {
+        if (t.isJSXExpressionContainer(attr.value)) {
+          const expr = attr.value.expression;
+          if (t.isIdentifier(expr)) {
+            eventHandler = expr.name;
+          } else if (t.isArrowFunctionExpression(expr) || t.isFunctionExpression(expr)) {
+            // Try to extract navigate calls from inline functions
+            eventHandler = 'inline-function';
+          }
+        }
+      }
+      
+      // Extract label/aria-label for name
+      if (['aria-label', 'label', 'title'].includes(attrName)) {
+        if (t.isStringLiteral(attr.value)) {
+          name = attr.value.value;
+        }
+      }
+    }
+    
+    // Extract text content as fallback name
+    if (!name && element.children.length > 0) {
+      const firstChild = element.children[0];
+      if (t.isJSXText(firstChild)) {
+        name = firstChild.value.trim();
+      }
+    }
+    
+    // Only create navigation element if it has a target or handler
+    if (!target && !eventHandler) {
+      return null;
+    }
+    
+    // Determine element type
+    let type: 'button' | 'link' | 'icon' | 'menu-item' = 'button';
+    if (elementName === 'a' || elementName === 'link') {
+      type = 'link';
+    } else if (name && name.length < 3) {
+      // Short text might indicate an icon
+      type = 'icon';
+    } else if (name.toLowerCase().includes('menu')) {
+      type = 'menu-item';
+    }
+    
+    return {
+      name: name || target || 'unnamed',
+      target,
+      type,
+      sectionType: 'menu',
+      file: filePath,
+      line: openingElement.loc?.start.line,
+      column: openingElement.loc?.start.column,
+      eventHandler,
+      metadata
+    };
   }
 }
 

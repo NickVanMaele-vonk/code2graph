@@ -510,6 +510,46 @@ describe('AST Parser', () => {
       const stateElements = informativeElements.filter(el => el.type === 'state-management');
       assert.ok(stateElements.length > 0);
     });
+
+    it('should capture interactive components without explicit handlers (Component Type Recognition)', async () => {
+      const testFile = path.join(tempDir, 'interactive-components.tsx');
+      const content = `
+        import React from 'react';
+        import { Button } from '@/components/ui/button';
+        import { Dialog, DialogTrigger } from '@/components/ui/dialog';
+        
+        export const MyComponent = () => {
+          return (
+            <div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="w-full">Mark Attendance</Button>
+                </DialogTrigger>
+              </Dialog>
+              <a href="/home">Go Home</a>
+              <input type="text" placeholder="Enter name" />
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      // Should find Button component even without direct event handler
+      const buttonElement = informativeElements.find(el => el.name === 'Button');
+      assert.ok(buttonElement, 'Should capture Button component without explicit handler');
+      assert.strictEqual(buttonElement.type, 'input', 'Button should be classified as input type');
+
+      // Should find anchor tag
+      const linkElement = informativeElements.find(el => el.name === 'a');
+      assert.ok(linkElement, 'Should capture anchor tag');
+
+      // Should find input element
+      const inputElement = informativeElements.find(el => el.name === 'input');
+      assert.ok(inputElement, 'Should capture input element');
+    });
   });
 
   describe('findASTNodeTypes', () => {

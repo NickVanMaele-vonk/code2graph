@@ -188,6 +188,13 @@ describe('AnalysisLogger', () => {
     });
 
     test('should log memory usage', async () => {
+      // Root cause fix: Ensure clean log file state before test
+      // This prevents interference from previous tests that may have written to the same file
+      const logPath = logger.getLogPath();
+      if (await fs.pathExists(logPath)) {
+        await fs.remove(logPath);
+      }
+      
       const memoryInfo = {
         used: 1024000,
         total: 2048000,
@@ -196,17 +203,19 @@ describe('AnalysisLogger', () => {
       
       await logger.logMemoryUsage(memoryInfo);
       
-      // Phase G: Add small delay to ensure file write completes on Windows
-      // Windows file system can have timing issues with immediate read after write
-      // using appendFile (EPERM errors when file handle not yet released)
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const logPath = logger.getLogPath();
-      assert(await fs.pathExists(logPath));
+      // Verify log file was created
+      assert(await fs.pathExists(logPath), 'Log file should exist after logging');
       
       const logContent = await fsBuiltin.readFile(logPath, 'utf-8');
-      assert(logContent.includes('Memory usage'));
-      assert(logContent.includes('1024000'));
+      
+      // Debug: Log the actual content if assertion fails
+      if (!logContent.includes('Memory usage')) {
+        console.log('Log file content:', logContent);
+        console.log('Log file path:', logPath);
+      }
+      
+      assert(logContent.includes('Memory usage'), 'Log should contain "Memory usage"');
+      assert(logContent.includes('1024000'), 'Log should contain memory value');
     });
 
     test('should log configuration', async () => {

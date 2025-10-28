@@ -289,14 +289,40 @@ export type DataType = "array" | "list" | "integer" | "table" | "view" | string;
 /**
  * Node type definitions
  * UPDATED (Phase A): Added "external-dependency" for external library nodes
+ * UPDATED (Change Request 002): Added "ui-section" for UI section/tab nodes
+ * 
+ * Context: UI sections represent major navigation sections (tabs, menu items)
+ * that group related components. They enable hierarchical visualization showing
+ * which components belong to which UI section.
+ * 
+ * Business Logic: "ui-section" nodes use "displays" relationships to show
+ * section membership, distinct from "contains" which shows internal structure.
  */
-export type NodeType = "function" | "API" | "table" | "view" | "route" | "external-dependency" | string;
+export type NodeType = "function" | "API" | "table" | "view" | "route" | "external-dependency" | "ui-section" | string;
 
 /**
- * Node category definitions
+ * Node category definitions (4-tier architecture)
  * UPDATED (Phase A): Added "library" for external dependency nodes
+ * UPDATED (Change Request 002): 
+ * - Changed "front end" to "front-end" (hyphenated) for consistency
+ * - Added "api" as a distinct layer for API endpoints
+ * - Evolved from 3-tier to 4-tier architecture following event flow
+ * 
+ * Context: Categories determine left-to-right positioning in hierarchical layout
+ * following the sequence of events triggered in code.
+ * 
+ * Business Logic - Event Flow Principle (left to right):
+ * 1. "front-end": UI sections, components, buttons, forms (leftmost - user interaction starts)
+ * 2. "middleware": Business logic functions, handlers, validators (center-left - processing layer)
+ * 3. "api": API endpoints and routes (center-right - API layer)
+ * 4. "database": Database tables, views, queries (rightmost - data persistence)
+ * 5. "library": External dependencies (positioned based on usage context)
+ * 
+ * Example Event Flow:
+ * User clicks button → handleClick() → validateInput() → /api/users → users_table
+ *    [front-end]        [middleware]     [middleware]      [api]       [database]
  */
-export type NodeCategory = "front end" | "middleware" | "database" | "library";
+export type NodeCategory = "front-end" | "api" | "middleware" | "database" | "library";
 
 /**
  * Code ownership type definitions
@@ -309,8 +335,30 @@ export type CodeOwnership = "internal" | "external";
 /**
  * Relationship type definitions
  * UPDATED (Phase A): Added "contains" for structural parent-child relationships
+ * UPDATED (Change Request 002): Added "displays" for UI section-to-component relationships
+ * 
+ * Context: Relationships define edge semantics in the dependency graph.
+ * 
+ * Business Logic - Relationship Semantics:
+ * - "displays": UI Section → Component (section-level membership)
+ *   Example: [Manage Tab] --displays--> [ClubMembersButton]
+ *   Semantic: "This section shows this component to the user"
+ * 
+ * - "contains": Component → JSX Element (structural parent-child)
+ *   Example: [ContactForm] --contains--> [EmailField]
+ *   Semantic: "This component structurally owns this element"
+ * 
+ * - "renders": Component → Component (component usage)
+ * - "imports": Component → External Package (dependency)
+ * - "calls": Component/JSX/API → Function/API (invocation)
+ * - "reads": API → Database Table/View (data read)
+ * - "writes to": API → Database Table/View (data write)
+ * - "uses": Generic usage relationship
+ * 
+ * Key Distinction: A tab "displays" a button (UI organization),
+ * while a form "contains" a field (internal structure).
  */
-export type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains";
+export type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains" | "displays";
 
 /**
  * Node information interface
@@ -815,4 +863,129 @@ export interface DependencyAnalyzer {
   calculateUsageStatistics(usageInfos: UsageInfo[]): UsageStatistics;
   detectDeadCode(usageInfos: UsageInfo[]): DeadCodeInfo[];
   generatePerformanceWarnings(statistics: UsageStatistics): PerformanceWarning[];
+}
+
+/**
+ * Router Detection and Route Extraction Types
+ * Phase 2: Router Detection (Change Request 002)
+ * 
+ * Context: Enables generic detection of routing configurations across different frameworks
+ * to identify UI sections (tabs, pages, menu items) for hierarchical visualization.
+ */
+
+/**
+ * Section type definitions for UI routing
+ * Categorizes different types of navigable UI sections
+ */
+export type SectionType = 'tab' | 'page' | 'menu' | 'modal' | 'panel' | 'view';
+
+/**
+ * Route information extracted from router configuration
+ * Represents a navigable route in the application
+ */
+export interface RouteInfo {
+  path: string;              // Route path: "/manage", "/library/:id"
+  component: string;         // Component name: "Manage", "Library"
+  label?: string;            // Display label (derived from component or explicit)
+  file: string;              // File where route is defined
+  line?: number;             // Line number in file
+  column?: number;           // Column number in file
+  sectionType: SectionType;  // Type of UI section: 'tab', 'page', 'menu', etc.
+  children?: RouteInfo[];    // Nested routes (for hierarchical routing)
+  metadata?: Record<string, unknown>; // Additional route metadata
+}
+
+/**
+ * Framework type for router detection
+ */
+export type RouterFramework = 'react-router' | 'wouter' | 'next-js' | 'vue-router' | 'angular-router' | 'generic';
+
+/**
+ * Router detection pattern configuration
+ * Defines how to detect and extract routes for different frameworks
+ */
+export interface RouterDetectionPattern {
+  framework: RouterFramework;
+  routerLibraries: string[];  // Import sources: ['react-router-dom', 'wouter']
+  routePatterns: {
+    componentProp: string[];   // Props that indicate component: ['component', 'element', 'render']
+    pathProp: string[];        // Props that indicate path: ['path', 'to', 'route']
+    nodeTypes: string[];       // AST node types to look for: ['JSXElement', 'ObjectExpression']
+    elementNames: string[];    // Element names: ['Route', 'Switch', 'Routes']
+  };
+  priority: number;           // Detection priority (higher = checked first)
+}
+
+/**
+ * Navigation element information
+ * Represents non-route UI navigation elements (menu items, icons, buttons)
+ */
+export interface NavigationElementInfo {
+  name: string;              // Element name or label
+  target?: string;           // Navigation target (path or component)
+  type: 'button' | 'link' | 'icon' | 'menu-item';
+  sectionType: SectionType;  // Associated section type
+  file: string;              // File where element is defined
+  line?: number;             // Line number
+  column?: number;           // Column number
+  eventHandler?: string;     // Navigation handler function
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Router analysis result
+ * Contains all routes and navigation elements detected in the codebase
+ */
+export interface RouterAnalysisResult {
+  routes: RouteInfo[];
+  navigationElements: NavigationElementInfo[];
+  routerFiles: string[];     // Files identified as router configurations
+  framework: RouterFramework | 'multiple' | 'unknown';
+  totalRoutes: number;
+  totalNavigationElements: number;
+}
+
+/**
+ * Component Tree and Section Mapping Types
+ * Phase 3: Component Mapping (Change Request 002)
+ * 
+ * Context: Enables hierarchical component tree traversal to map components
+ * to their parent UI sections for "displays" relationship creation.
+ */
+
+/**
+ * Component tree node representing a component and its children
+ * Used to build complete component hierarchy for each route/section
+ */
+export interface ComponentTreeNode {
+  componentId: string;           // Unique ID for the component node in graph
+  componentName: string;         // Component name (e.g., "Manage", "ClubMembersButton")
+  file: string;                  // File where component is defined
+  children: ComponentTreeNode[]; // Child components used by this component
+  parentSections: string[];      // Section IDs this component belongs to (can be multiple)
+  depth: number;                 // Depth in tree (root = 0)
+  isShared: boolean;             // True if component is used in multiple sections
+}
+
+/**
+ * Usage context for a component within a section
+ * Distinguishes between different ways a component is used
+ */
+export type ComponentUsageContext = 'primary-content' | 'modal' | 'dialog' | 'shared-utility' | 'nested-component';
+
+/**
+ * Component-to-section mapping
+ * Tracks which sections display which components
+ */
+export interface ComponentToSectionMapping {
+  componentId: string;           // Component node ID in graph
+  componentName: string;         // Component name for debugging
+  sectionIds: string[];          // Array of section IDs (supports shared components)
+  usageLocations: {              // Detailed usage information
+    sectionId: string;           // Which section uses this component
+    context: ComponentUsageContext; // How it's used (primary, modal, etc.)
+    file: string;                // File where usage occurs
+    line?: number;               // Line number of usage
+  }[];
+  isRootComponent: boolean;      // True if this is the route component itself
 }

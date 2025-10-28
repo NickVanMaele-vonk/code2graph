@@ -26,7 +26,7 @@ describe('JSONGeneratorImpl', () => {
         id: 'node1',
         label: 'ComponentA',
         nodeType: 'function',
-        nodeCategory: 'front end',
+        nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
         datatype: 'array',
         liveCodeScore: 100,
         file: '/src/components/ComponentA.tsx',
@@ -38,7 +38,7 @@ describe('JSONGeneratorImpl', () => {
         id: 'node2',
         label: 'UnusedComponent',
         nodeType: 'function',
-        nodeCategory: 'front end',
+        nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
         datatype: 'object',
         liveCodeScore: 0,
         file: '/src/components/UnusedComponent.tsx',
