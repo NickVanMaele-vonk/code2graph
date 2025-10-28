@@ -78,6 +78,51 @@ function initializeCytoscape() {
                     'arrow-scale': 0.5,
                     'curve-style': 'bezier'
                 }
+            },
+            // Focus Mode Styles - Enhanced Node Click Functionality
+            // These styles are applied when users click nodes to focus on their connections
+            {
+                selector: '.node-focused',
+                style: {
+                    'border-width': 4,
+                    'border-color': '#ff6b35',
+                    'background-color': '#fff3e0',
+                    'box-shadow': '0 0 15px rgba(255, 107, 53, 0.4)'
+                }
+            },
+            {
+                selector: '.node-connected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#4caf50',
+                    'background-color': '#e8f5e8',
+                    'box-shadow': '0 0 10px rgba(76, 175, 80, 0.3)'
+                }
+            },
+            {
+                selector: '.node-dimmed',
+                style: {
+                    'opacity': 0.3,
+                    'background-color': '#f5f5f5',
+                    'border-color': '#e0e0e0'
+                }
+            },
+            {
+                selector: '.edge-focused',
+                style: {
+                    'width': 3,
+                    'line-color': '#ff6b35',
+                    'target-arrow-color': '#ff6b35',
+                    'opacity': 1
+                }
+            },
+            {
+                selector: '.edge-dimmed',
+                style: {
+                    'opacity': 0.2,
+                    'line-color': '#d0d0d0',
+                    'target-arrow-color': '#d0d0d0'
+                }
             }
         ],
         layout: {
