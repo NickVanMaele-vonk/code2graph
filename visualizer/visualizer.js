@@ -6,6 +6,16 @@
 let cy;
 
 /**
+ * Global state management for node focus functionality
+ * Tracks whether focus mode is active and which node is currently focused
+ * Business Logic: Enables toggling between normal view and focused view of node connections
+ */
+let focusState = {
+    isActive: false,
+    focusedNodeId: null
+};
+
+/**
  * Initialize Cytoscape.js with empty graph
  */
 function initializeCytoscape() {
@@ -357,6 +367,7 @@ function setupNodeInteractions() {
     });
     
     // Phase 2: Show detailed information in side panel on click
+    // Enhanced with focus mode toggle functionality
     cy.on('tap', 'node', function(evt) {
         const node = evt.target;
         const nodeData = node.data();
@@ -368,7 +379,25 @@ function setupNodeInteractions() {
         const detailsHTML = createDetailedNodeInfo(nodeData);
         detailsPanel.innerHTML = detailsHTML;
         
-        // Highlight the selected node
+        // Handle focus mode toggle
+        if (focusState.isActive && focusState.focusedNodeId === node.id()) {
+            // Second click on same node: clear focus state
+            clearFocusState();
+        } else {
+            // First click or click on different node: apply focus state
+            const upstreamNodes = getUpstreamNodes(node);
+            const downstreamNodes = getDownstreamNodes(node);
+            const connectedEdges = getConnectedEdges(node, upstreamNodes, downstreamNodes);
+            
+            // Apply focus state styling
+            applyFocusState(node, upstreamNodes, downstreamNodes, connectedEdges);
+            
+            // Update focus state
+            focusState.isActive = true;
+            focusState.focusedNodeId = node.id();
+        }
+        
+        // Highlight the selected node (maintain existing functionality)
         cy.nodes().removeClass('node-selected');
         node.addClass('node-selected');
     });
@@ -378,6 +407,8 @@ function setupNodeInteractions() {
         if (evt.target === cy) {
             cy.nodes().removeClass('node-selected');
             detailsPanel.innerHTML = '<p class="placeholder">Click a node to see details</p>';
+            // Also clear focus state when clicking on background
+            clearFocusState();
         }
     });
 }
@@ -458,6 +489,156 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * Get all upstream nodes (nodes that have outgoing edges to the target node)
+ * Business Logic: Identifies all nodes that directly or indirectly influence the target node
+ * @param {Object} node - Cytoscape node object
+ * @returns {Array} Array of upstream node objects
+ */
+function getUpstreamNodes(node) {
+    const upstreamNodes = [];
+    const visited = new Set();
+    
+    function traverseUpstream(currentNode) {
+        if (visited.has(currentNode.id())) {
+            return;
+        }
+        visited.add(currentNode.id());
+        
+        // Get all incoming edges (edges pointing TO this node)
+        const incomingEdges = currentNode.incomers('edge');
+        incomingEdges.forEach(edge => {
+            const sourceNode = edge.source();
+            if (!visited.has(sourceNode.id())) {
+                upstreamNodes.push(sourceNode);
+                traverseUpstream(sourceNode);
+            }
+        });
+    }
+    
+    traverseUpstream(node);
+    return upstreamNodes;
+}
+
+/**
+ * Get all downstream nodes (nodes that have incoming edges from the target node)
+ * Business Logic: Identifies all nodes that are directly or indirectly influenced by the target node
+ * @param {Object} node - Cytoscape node object
+ * @returns {Array} Array of downstream node objects
+ */
+function getDownstreamNodes(node) {
+    const downstreamNodes = [];
+    const visited = new Set();
+    
+    function traverseDownstream(currentNode) {
+        if (visited.has(currentNode.id())) {
+            return;
+        }
+        visited.add(currentNode.id());
+        
+        // Get all outgoing edges (edges pointing FROM this node)
+        const outgoingEdges = currentNode.outgoers('edge');
+        outgoingEdges.forEach(edge => {
+            const targetNode = edge.target();
+            if (!visited.has(targetNode.id())) {
+                downstreamNodes.push(targetNode);
+                traverseDownstream(targetNode);
+            }
+        });
+    }
+    
+    traverseDownstream(node);
+    return downstreamNodes;
+}
+
+/**
+ * Get all edges connected to the focused node and its upstream/downstream nodes
+ * Business Logic: Identifies all edges that should be highlighted in focus mode
+ * @param {Object} focusedNode - The main focused node
+ * @param {Array} upstreamNodes - Array of upstream nodes
+ * @param {Array} downstreamNodes - Array of downstream nodes
+ * @returns {Array} Array of connected edge objects
+ */
+function getConnectedEdges(focusedNode, upstreamNodes, downstreamNodes) {
+    const connectedEdges = [];
+    const allConnectedNodes = [focusedNode, ...upstreamNodes, ...downstreamNodes];
+    const nodeIds = new Set(allConnectedNodes.map(node => node.id()));
+    const edgeSet = new Set(); // Track edges already added to prevent duplicates
+    
+    // Find all edges between connected nodes
+    // Context: Each edge appears in multiple nodes' connectedEdges() (once for source, once for target)
+    // Business Logic: Deduplicate edges to avoid showing the same edge multiple times
+    allConnectedNodes.forEach(node => {
+        const edges = node.connectedEdges();
+        edges.forEach(edge => {
+            const sourceId = edge.source().id();
+            const targetId = edge.target().id();
+            
+            // Include edge if both source and target are in connected nodes
+            // AND we haven't already added this edge
+            if (nodeIds.has(sourceId) && nodeIds.has(targetId) && !edgeSet.has(edge)) {
+                connectedEdges.push(edge);
+                edgeSet.add(edge); // Mark edge as added to prevent duplicates
+            }
+        });
+    });
+    
+    return connectedEdges;
+}
+
+/**
+ * Apply focus state styling to nodes and edges
+ * Business Logic: Highlights the focused node, its connections, and dims all other elements
+ * @param {Object} focusedNode - The main focused node
+ * @param {Array} upstreamNodes - Array of upstream nodes
+ * @param {Array} downstreamNodes - Array of downstream nodes
+ * @param {Array} connectedEdges - Array of connected edges
+ */
+function applyFocusState(focusedNode, upstreamNodes, downstreamNodes, connectedEdges) {
+    // Clear any existing focus classes
+    cy.elements().removeClass('node-focused node-connected node-dimmed edge-focused edge-dimmed');
+    
+    // Apply focused styling to the main node
+    focusedNode.addClass('node-focused');
+    
+    // Apply connected styling to upstream and downstream nodes
+    [...upstreamNodes, ...downstreamNodes].forEach(node => {
+        node.addClass('node-connected');
+    });
+    
+    // Apply focused styling to connected edges
+    connectedEdges.forEach(edge => {
+        edge.addClass('edge-focused');
+    });
+    
+    // Apply dimmed styling to all other nodes
+    cy.nodes().forEach(node => {
+        if (!node.hasClass('node-focused') && !node.hasClass('node-connected')) {
+            node.addClass('node-dimmed');
+        }
+    });
+    
+    // Apply dimmed styling to all other edges
+    cy.edges().forEach(edge => {
+        if (!edge.hasClass('edge-focused')) {
+            edge.addClass('edge-dimmed');
+        }
+    });
+}
+
+/**
+ * Clear focus state and return to normal view
+ * Business Logic: Removes all focus-related styling and resets to normal view
+ */
+function clearFocusState() {
+    // Remove all focus-related CSS classes
+    cy.elements().removeClass('node-focused node-connected node-dimmed edge-focused edge-dimmed');
+    
+    // Reset focus state
+    focusState.isActive = false;
+    focusState.focusedNodeId = null;
 }
 
 /**
