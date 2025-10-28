@@ -40,6 +40,26 @@ In the output graph, the top node is 'App-root'.
 The next layers are UI elements, APIs, functions, etc. 
 The end nodes are database tables or data files. 
 
+**Graph Filtering Philosophy:**
+Code2Graph focuses on **business logic and user interactions** by filtering out visual noise:
+- ✅ **Interactive elements WITH event handlers** become nodes (e.g., `<button onClick={...}>`)
+- ✅ **Data sources (API calls)** become nodes
+- ✅ **State management (useState)** becomes nodes
+- ❌ **Passive HTML formatting elements WITHOUT handlers** are filtered out (e.g., `<div>{data}</div>`, `<h1>{title}</h1>`, `<p>{text}</p>`)
+- **Rationale**: Reduces graph complexity and focuses on what matters for understanding code flow and dependencies
+
+**Node Creation Rules:**
+
+| Element Type | Has Event Handler? | Becomes Node? | Reason |
+|--------------|-------------------|---------------|---------|
+| `<button onClick={...}>` | ✅ Yes | ✅ **Yes** | User interaction point |
+| `<input onChange={...}>` | ✅ Yes | ✅ **Yes** | User input capture |
+| `<div>{data}</div>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `<h1>{title}</h1>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `<p>{text}</p>` | ❌ No | ❌ **No** | Passive display/formatting |
+| `fetch('/api/users')` | N/A | ✅ **Yes** | Data source |
+| `useState(0)` | N/A | ✅ **Yes** | State management |
+
 Dead code (orphaned code) shows up as nodes with no incoming edges. 
 
 Initial focus: React / Typescript.
@@ -91,8 +111,13 @@ Details on DependencyAnalyzer
 ✅ Import/Export Analysis: Comprehensive extraction of module dependencies
 ✅ JSX Element Detection: Full JSX component analysis with event handlers and data binding
 ✅ Informative Element Identification: Detection of display, input, data source, and state management elements
+✅ **Phase H Bug Fix (2025-10-27)**: Fixed Babel traversal bug that caused 39 files (22%) to fail parsing when analyzing complex event handlers
+  - **Issue**: `@babel/traverse` requires `scope` and `parentPath` parameters when traversing child nodes (arrow functions, inline functions)
+  - **Solution**: Implemented manual recursive AST traversal for event handler function bodies
+  - **Impact**: Parse success rate increased from 78% to 100% on real-world repositories
+  - **Test Coverage**: Added 6 new unit tests for complex event handler patterns (async/await, nested calls, method calls)
 ✅ CLI Integration: Seamlessly integrated into the existing Code2Graph workflow
-✅ Comprehensive Testing: 100% test coverage with robust error handling scenarios
+✅ Comprehensive Testing: 284 passing tests (100% coverage) with robust error handling scenarios
 
 **Phase 4 - Middleware traversal - Complete**: Usage tracking and dead code detection
 4.1 Usage Tracking - COMPLETE
@@ -190,7 +215,8 @@ Examples:
 # Analyze a repository with default settings
 node dist/index.js analyze https://github.com/user/repo
 
-## Example repo: node dist/index.js analyze https://github.com/tomm/react-typescript-helloworld
+## Example command: 
+## node dist/index.js analyze https://github.com/tomm/react-typescript-helloworld
 
 # Analyze with custom output format and file
 node dist/index.js analyze https://github.com/user/repo -f json -o ./my-analysis.json

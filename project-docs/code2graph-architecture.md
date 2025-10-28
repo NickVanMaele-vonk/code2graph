@@ -140,15 +140,21 @@ interface ReactAnalyzer {
 **Responsibilities:**
 - Identify React components (functional, class, hooks)
 - Find informative elements using specific AST patterns
-- Detect display elements: JSX elements with JSXExpressionContainer containing props/state data
-- Detect input elements: JSX elements with event handlers (onClick, onChange, onSubmit)
+- **Detect interactive elements** (CREATE nodes): JSX elements with event handlers (onClick, onChange, onSubmit) that capture user interactions
+- **Filter passive display elements** (SKIP nodes): HTML formatting elements (div, h1, p, span, label, etc.) without event handlers are filtered out to reduce graph noise, even if they contain data bindings
 - **Extract event handler details**: Parse event handler expressions to identify:
   - Function references: `onClick={handleClick}` → extracts "handleClick"
   - Arrow functions: `onClick={() => func1(); func2();}` → extracts ["func1", "func2"]
   - Inline functions: `onClick={function() { doSomething(); }}` → extracts ["doSomething"]
 - **Track function calls in handlers**: Support multiple function calls per event handler for accurate data flow tracing
-- Detect data sources: CallExpression patterns for API calls
-- Detect state management: VariableDeclarator with useState patterns
+- **Detect data sources** (CREATE nodes): CallExpression patterns for API calls
+- **Detect state management** (CREATE nodes): VariableDeclarator with useState patterns
+- **Node Filtering Strategy** (Phase H): Only create nodes for JSX elements that have:
+  1. Event handlers (user interaction points), OR
+  2. Are data sources (API calls), OR
+  3. Are state management (useState)
+  - Skip passive HTML formatting elements (div, h1, p, span, label, section, article, header, footer, nav, main, aside, etc.) that only display data without handlers
+  - Rationale: Reduces graph noise and focuses on business logic and user interactions
 - Extract component props and state
 - Analyze component lifecycle and effects
 - Collapse duplicate nodes representing same logical concept

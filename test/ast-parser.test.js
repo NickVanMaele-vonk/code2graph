@@ -244,6 +244,179 @@ describe('AST Parser', () => {
     });
   });
 
+  describe('Semantic Identifier Extraction', () => {
+    it('should extract aria-label as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'aria-label-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button aria-label="Save changes" onClick={() => {}}>
+              Save
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Save changes', 'Should extract aria-label');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should extract data-testid as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'data-testid-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <div data-testid="calendar-day" onClick={() => {}}>
+              12
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const divElement = informativeElements.find(el => el.name === 'div');
+      assert.ok(divElement, 'Should find div element');
+      assert.strictEqual(divElement.semanticIdentifier, 'calendar-day', 'Should extract data-testid');
+      assert.strictEqual(divElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should extract id attribute as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'id-attr-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button id="submit-btn" onClick={() => {}}>
+              Submit
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'submit-btn', 'Should extract id attribute');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should prioritize aria-label over data-testid and id', async () => {
+      const testFile = path.join(tempDir, 'priority-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button 
+              aria-label="Primary Label"
+              data-testid="test-id"
+              id="button-id"
+              onClick={() => {}}
+            >
+              Button Text
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Primary Label', 'Should prioritize aria-label');
+    });
+
+    it('should extract text content as fallback semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'text-fallback-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button onClick={() => {}}>Cancel</button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Cancel', 'Should extract text content as fallback');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should return undefined for JSX element without semantic identifiers', async () => {
+      const testFile = path.join(tempDir, 'no-semantic-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          const selectDate = () => {};
+          return (
+            <div onClick={selectDate}>
+              <span>Day</span> 12
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const divElement = informativeElements.find(el => el.name === 'div');
+      assert.ok(divElement, 'Should find div element');
+      assert.strictEqual(divElement.semanticIdentifier, undefined, 'Should not have semantic identifier');
+      assert.strictEqual(divElement.hasSemanticIdentifier, false, 'Should not set hasSemanticIdentifier flag');
+    });
+
+    it('should not extract long text content (> 30 characters)', async () => {
+      const testFile = path.join(tempDir, 'long-text-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button onClick={() => {}}>
+              This is a very long button text that exceeds the character limit
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, undefined, 'Should not extract long text');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, false, 'Should not set hasSemanticIdentifier flag');
+    });
+  });
+
   describe('extractInformativeElements', () => {
     it('should detect display elements with data binding', async () => {
       const testFile = path.join(tempDir, 'display-elements.tsx');
@@ -716,6 +889,152 @@ describe('AST Parser', () => {
       assert.ok(clickHandler, 'Should have onClick handler');
       assert.strictEqual(clickHandler.handler, 'increment', 'Should extract increment method name');
       assert.strictEqual(clickHandler.type, 'method-reference', 'Should detect method-reference type');
+    });
+  });
+
+  // Phase H Bug Fix Tests: Complex Event Handler Parsing
+  // Tests for the fix of the Babel traversal bug that caused parse errors
+  // when analyzing arrow functions and inline functions in event handlers
+  describe('extractInformativeElements - Complex Event Handlers (Phase H Bug Fix)', () => {
+    it('should handle arrow functions with multiple function calls', async () => {
+      const testFile = path.join(tempDir, 'complex-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          const func1 = () => {};
+          const func2 = () => {};
+          return <button onClick={() => { func1(); func2(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      assert.ok(buttonElement.eventHandlers.length > 0, 'Button should have event handlers');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('func1'), 'Should extract func1');
+      assert.ok(clickHandler.handler.includes('func2'), 'Should extract func2');
+      assert.strictEqual(clickHandler.type, 'arrow-function', 'Should detect arrow-function type');
+    });
+    
+    it('should handle async arrow functions with await', async () => {
+      const testFile = path.join(tempDir, 'async-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={async () => { await apiRequest(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('apiRequest'), 'Should extract apiRequest');
+      assert.strictEqual(clickHandler.type, 'arrow-function', 'Should detect arrow-function type');
+    });
+    
+    it('should handle nested function calls in event handlers', async () => {
+      const testFile = path.join(tempDir, 'nested-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => { toast({ title: handleSuccess() }); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('toast'), 'Should extract toast');
+      assert.ok(clickHandler.handler.includes('handleSuccess'), 'Should extract handleSuccess');
+    });
+    
+    it('should handle inline function expressions', async () => {
+      const testFile = path.join(tempDir, 'inline-functions.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={function() { doSomething(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('doSomething'), 'Should extract doSomething');
+      assert.strictEqual(clickHandler.type, 'function-expression', 'Should detect function-expression type');
+    });
+    
+    it('should handle method calls in event handlers', async () => {
+      const testFile = path.join(tempDir, 'method-handlers.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => { queryClient.invalidateQueries(); toast.success(); }}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('invalidateQueries'), 'Should extract invalidateQueries method');
+      assert.ok(clickHandler.handler.includes('success'), 'Should extract success method');
+    });
+    
+    it('should handle arrow function with expression body', async () => {
+      const testFile = path.join(tempDir, 'arrow-expression.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const Component = () => {
+          return <button onClick={() => doSomething()}>Click</button>;
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const elements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = elements.find(e => e.name === 'button');
+      assert.ok(buttonElement, 'Button element should be found');
+      
+      const clickHandler = buttonElement.eventHandlers.find(h => h.name === 'onClick');
+      assert.ok(clickHandler, 'Should have onClick handler');
+      assert.ok(clickHandler.handler.includes('doSomething'), 'Should extract doSomething from expression body');
     });
   });
 });

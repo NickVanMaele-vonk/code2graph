@@ -70,22 +70,45 @@ A specialized tool that:
   - Note: Labels and non-interactive elements are not considered informative
 - **Programmatic identification**: Analyze AST using @babel/parser to identify:
   - **Primary AST Node Types**: JSXElement, JSXExpressionContainer, CallExpression, VariableDeclarator/VariableDeclaration, ArrowFunctionExpression/FunctionDeclaration, MemberExpression
-  - **Display Elements**: JSX elements with JSXExpressionContainer containing props/state data
-  - **Input Elements**: JSX elements with event handlers (onClick, onChange, onSubmit)
+  - **Interactive Elements** (CREATE nodes): JSX elements with event handlers (onClick, onChange, onSubmit) that capture user interactions
+  - **Display Elements** (SKIP nodes): Passive HTML formatting elements (div, h1, p, span, etc.) without event handlers are filtered out to reduce graph noise, even if they contain data bindings
   - **Event Handler Analysis**: Extract function calls from event handlers:
     - Function references: `onClick={handleClick}` → identifies "handleClick" as target function
     - Arrow functions: `onClick={() => { func1(); func2(); }}` → identifies ["func1", "func2"] as targets
     - Inline functions: `onClick={function() { doSomething(); }}` → identifies ["doSomething"] as target
     - Multiple calls per handler supported for complete data flow tracking
-  - **Data Sources**: CallExpression patterns for API calls
-  - **State Management**: VariableDeclarator with useState patterns
+  - **Data Sources** (CREATE nodes): CallExpression patterns for API calls
+  - **State Management** (CREATE nodes): VariableDeclarator with useState patterns
+  - **Filtering Strategy**: Only create nodes for:
+    1. JSX elements that have BOTH:
+       a) Event handlers (user interaction points), AND
+       b) Semantic identifiers (aria-label, data-testid, id attribute, or other meaningful identifying props)
+    2. Data sources (API calls)
+    3. State management (useState)
+    - For JSX elements with event handlers but NO semantic identifier:
+      Skip node creation; create direct Component → Handler function edges
+    - Skip passive HTML formatting elements (div, h1, p, span, label, etc.) that only display data without handlers
   - **Node Creation Rules**: Imported components become nodes if used; data arrays/variables become nodes; functions handling data/interaction become nodes; API endpoints normalized with parameters (e.g., :clubid); database tables/views become nodes; conditionally rendered components become nodes; JSX fragments analyzed same as regular JSX
   - **Node Collapse Logic**: Multiple nodes representing same data collapse into one if they lead to same database table
-  - **Naming Conventions**: Use import alias for components; use array variable name for data arrays; use function name for functions; use parameterized form for API endpoints
+  - **Naming Conventions**: 
+    - Components: Use import alias
+    - Data arrays/variables: Use variable name  
+    - Functions: Use function name
+    - API endpoints: Use parameterized form (e.g., :clubid)
+    - JSX elements with event handlers:
+      - IF element has semantic identifier (aria-label, data-testid, id attribute): Use that semantic name as node label
+      - ELSE: Do NOT create node; create direct edges from Component to handler function(s) 
   - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "middleware", "database"}
-  - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports
+  - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports; generic JSX elements with event handlers but no semantic identifiers (create direct edges to handlers instead)
   - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"imports", "calls", "reads", "writes to", "renders", "contains"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
-  - **Event Handler Edges**: Create "calls" edges from JSX elements to handler functions based on parsed event handler expressions; supports function references, arrow functions, and inline functions; enables complete user interaction flow: User → Button → handleClick → validateInput → API → Database
+  - **Event Handler Edges**: 
+    - For JSX elements WITH semantic identifiers: Create "contains" edge from Component to JSX element, then "calls" edge from JSX element to handler function(s)
+    - For JSX elements WITHOUT semantic identifiers: Create direct "calls" edge from Component to handler function(s), skip JSX element node creation
+    - Parse event handler expressions to identify target functions:
+      - Function references: `onClick={handleClick}` → create edge to "handleClick"
+      - Arrow functions with multiple calls: `onClick={() => { func1(); func2(); }}` → create separate edges to "func1" and "func2"
+      - Inline functions: `onClick={function() { doSomething(); }}` → create edge to "doSomething"
+    - Enables complete user interaction flow: Component → Handler → ValidateInput → API → Database
 - **JSX Element Parsing**: Analyze JSX structure to identify component relationships
 - **Import/Export Mapping**: Track component dependencies and usage
 - **Circular Dependency Detection**: Identify problematic dependency cycles
@@ -93,7 +116,8 @@ A specialized tool that:
 #### 3.1.3 Dependency Tracing
 - **Edge Direction Philosophy**: All edges follow UI → Database flow for intuitive tracing
   - Component → Import (dependency on external library)
-  - Component → JSX Element (structural parent-child with "contains" relationship)
+  - Component → JSX Element with semantic identifier (structural parent-child with "contains" relationship)
+  - Component → Handler Function (direct "calls" relationship for JSX elements without semantic identifiers)
   - Component A → Component B (component usage with "renders" relationship)
   - Component → API (invocation with "calls" relationship)
   - API → Database (data access with "reads" or "writes to" relationship)
@@ -129,10 +153,10 @@ A specialized tool that:
 - **DOT Format**: For Graphviz visualization
 - **Node Structure**: Every function/informative element = node, function calls = edges
 - **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains"
-  - "contains": Component → JSX Element (structural parent-child)
+  - "contains": Component → JSX Element with semantic identifier (structural parent-child for meaningful interactive elements only)
   - "renders": Component → Component (component usage/rendering)
   - "imports": Component → External Package (dependency)
-  - "calls": Component/API → API/Function (invocation)
+  - "calls": Component/JSX/API → Function/API (invocation - direct from Component if JSX has no semantic identifier)
   - "reads": API → Database Table/View (data read)
   - "writes to": API → Database Table/View (data write)
 - **Dead Code Identification**: Nodes with liveCodeScore = 0 (no incoming edges)
