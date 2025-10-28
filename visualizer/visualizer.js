@@ -32,7 +32,7 @@ function initializeCytoscape() {
                     'text-halign': 'right', // Position label to the right of node
                     'text-margin-x': '3px', // 8px horizontal spacing between node and label
                     
-                    // Zoom-independent font sizing (Hybrid approach - Option C)
+                    // Zoom-independent font sizing 
                     // Prevents labels from becoming unreadable when zoomed out
                     'min-zoomed-font-size': '8px',
                     
@@ -61,10 +61,11 @@ function initializeCytoscape() {
             {
                 selector: 'edge',
                 style: {
-                    'width': 2,
-                    'line-color': '#ccc',
-                    'target-arrow-color': '#ccc',
-                    'target-arrow-shape': 'triangle',
+                    'width': 1,
+                    'line-color': '#B8B8B8',
+                    'target-arrow-color': '#B8B8B8',
+                    'target-arrow-shape': 'vee',
+                    'arrow-scale': 0.5,
                     'curve-style': 'bezier'
                 }
             }
