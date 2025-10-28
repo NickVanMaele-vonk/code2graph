@@ -240,6 +240,7 @@ export interface JSXElementInfo {
  * Informative element information
  * Elements that exchange internal data with users
  * UPDATED (Phase A): Changed eventHandlers to EventHandler[] objects and added parentComponent tracking
+ * UPDATED (Semantic Filtering): Added semantic identifier fields for JSX element node creation filtering
  */
 export interface InformativeElementInfo {
   type: 'display' | 'input' | 'data-source' | 'state-management';
@@ -252,6 +253,8 @@ export interface InformativeElementInfo {
   column?: number;
   file: string;
   parentComponent?: string; // NEW (Phase A): Name of the component that contains this element (tracked via AST scope)
+  semanticIdentifier?: string; // NEW (Semantic Filtering): Semantic name from aria-label, data-testid, id, or text content
+  hasSemanticIdentifier?: boolean; // NEW (Semantic Filtering): Quick flag for filtering decisions (true if semanticIdentifier exists)
 }
 
 /**

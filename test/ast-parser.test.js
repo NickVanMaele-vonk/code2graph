@@ -244,6 +244,179 @@ describe('AST Parser', () => {
     });
   });
 
+  describe('Semantic Identifier Extraction', () => {
+    it('should extract aria-label as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'aria-label-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button aria-label="Save changes" onClick={() => {}}>
+              Save
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Save changes', 'Should extract aria-label');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should extract data-testid as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'data-testid-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <div data-testid="calendar-day" onClick={() => {}}>
+              12
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const divElement = informativeElements.find(el => el.name === 'div');
+      assert.ok(divElement, 'Should find div element');
+      assert.strictEqual(divElement.semanticIdentifier, 'calendar-day', 'Should extract data-testid');
+      assert.strictEqual(divElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should extract id attribute as semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'id-attr-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button id="submit-btn" onClick={() => {}}>
+              Submit
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'submit-btn', 'Should extract id attribute');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should prioritize aria-label over data-testid and id', async () => {
+      const testFile = path.join(tempDir, 'priority-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button 
+              aria-label="Primary Label"
+              data-testid="test-id"
+              id="button-id"
+              onClick={() => {}}
+            >
+              Button Text
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Primary Label', 'Should prioritize aria-label');
+    });
+
+    it('should extract text content as fallback semantic identifier', async () => {
+      const testFile = path.join(tempDir, 'text-fallback-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button onClick={() => {}}>Cancel</button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, 'Cancel', 'Should extract text content as fallback');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should return undefined for JSX element without semantic identifiers', async () => {
+      const testFile = path.join(tempDir, 'no-semantic-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          const selectDate = () => {};
+          return (
+            <div onClick={selectDate}>
+              <span>Day</span> 12
+            </div>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const divElement = informativeElements.find(el => el.name === 'div');
+      assert.ok(divElement, 'Should find div element');
+      assert.strictEqual(divElement.semanticIdentifier, undefined, 'Should not have semantic identifier');
+      assert.strictEqual(divElement.hasSemanticIdentifier, false, 'Should not set hasSemanticIdentifier flag');
+    });
+
+    it('should not extract long text content (> 30 characters)', async () => {
+      const testFile = path.join(tempDir, 'long-text-test.tsx');
+      const content = `
+        import React from 'react';
+        
+        export const MyComponent = () => {
+          return (
+            <button onClick={() => {}}>
+              This is a very long button text that exceeds the character limit
+            </button>
+          );
+        };
+      `;
+      await fs.writeFile(testFile, content);
+
+      const ast = await parser.parseFile(testFile);
+      const informativeElements = parser.extractInformativeElements(ast, testFile);
+
+      const buttonElement = informativeElements.find(el => el.name === 'button');
+      assert.ok(buttonElement, 'Should find button element');
+      assert.strictEqual(buttonElement.semanticIdentifier, undefined, 'Should not extract long text');
+      assert.strictEqual(buttonElement.hasSemanticIdentifier, false, 'Should not set hasSemanticIdentifier flag');
+    });
+  });
+
   describe('extractInformativeElements', () => {
     it('should detect display elements with data binding', async () => {
       const testFile = path.join(tempDir, 'display-elements.tsx');

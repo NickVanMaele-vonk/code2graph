@@ -374,6 +374,16 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         edges.push(...eventHandlerEdges);
       }
 
+      // Semantic Filtering: Create direct Component → Handler edges
+      // For JSX elements without semantic identifiers (no aria-label, data-testid, id, text content),
+      // we skip node creation and create direct edges from Component to Handler functions
+      // Example: <div onClick={selectDate}>12</div> → ClubCalendarDialog --calls--> selectDate
+      // This dramatically reduces graph noise (e.g., ClubCalendarDialog: 21 div nodes → 2-3 meaningful nodes)
+      if (components) {
+        const directHandlerEdges = this.createDirectHandlerEdges(nodes, components);
+        edges.push(...directHandlerEdges);
+      }
+
       // Remove duplicate edges
       const uniqueEdges = this.removeDuplicateEdges(edges);
 
@@ -1091,9 +1101,17 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     const elementId = `element_${element.name}`;
     const liveCodeScore = liveCodeScores.get(elementId) ?? 100;
 
+    // Semantic Filtering: Use semantic identifier as label if available
+    // This provides meaningful node labels instead of generic "div" or "button"
+    // Examples:
+    // - <button aria-label="Save changes">Save</button> → label = "Save changes"
+    // - <button onClick={handleClick}>Cancel</button> → label = "Cancel"
+    // - <div onClick={selectDate}>12</div> → (node not created, has no semantic identifier)
+    const nodeLabel = element.semanticIdentifier || element.name;
+
     return {
       id: this.generateNodeId(),
-      label: element.name,
+      label: nodeLabel,
       nodeType,
       nodeCategory,
       datatype,
@@ -1113,7 +1131,10 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         // The createEventHandlerEdges and createContainsEdges methods need parentComponent to match elements to components
         // Without this, edges cannot be created because the edge creation logic cannot find the parent component
         // Context: button needs parentComponent="MainComponent" to create edges MainComponent→button and button→increment
-        parentComponent: element.parentComponent // Track which component contains this element
+        parentComponent: element.parentComponent, // Track which component contains this element
+        // Semantic Filtering: Store semantic identifier flags for edge creation filtering
+        semanticIdentifier: element.semanticIdentifier, // The actual semantic name (aria-label, data-testid, id, text)
+        hasSemanticIdentifier: element.hasSemanticIdentifier // Boolean flag for quick filtering
       }
     };
   }
@@ -1349,57 +1370,72 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   }
 
   /**
-   * Phase H: Determines if a JSX element should become a graph node
-   * Filters out non-interactive HTML formatting elements to reduce graph noise
+   * Semantic Filtering: Determines if a JSX element should become a graph node
    * 
-   * Business Logic (per PRD §3.1.2):
-   * - "Informative elements" capture user input or display database data
-   * - "Labels and non-interactive elements are NOT informative"
-   * - Elements with event handlers ARE nodes (capture user interaction)
-   * - Data sources ARE nodes (API calls, fetch operations)
-   * - HTML formatting tags WITHOUT handlers are NOT nodes (visual noise)
+   * Business Logic (Updated per PRD §3.1.2 - Semantic Filtering):
+   * JSX elements with event handlers only become nodes if they have semantic identifiers.
+   * This dramatically reduces graph noise (e.g., ClubCalendarDialog: 21 generic divs → 2-3 meaningful nodes).
    * 
-   * Context:
-   * This implements the filtering requirement from the critique: "h1 and p are not interesting
-   * since they are HTML formatting commands that have nothing to do with user interactions
-   * or data flows in the application."
+   * PRD Requirements:
+   * - "Only create nodes for JSX elements that have BOTH:
+   *    a) Event handlers (user interaction points), AND
+   *    b) Semantic identifiers (aria-label, data-testid, id attribute)"
+   * - "For JSX elements with event handlers but NO semantic identifier:
+   *    Skip node creation; create direct Component → Handler function edges"
    * 
-   * Implementation Strategy:
-   * - Interactive elements (button with onClick) → Create node
-   * - Data sources (API calls) → Create node
-   * - Passive formatting elements (h1, p, div without handlers) → Skip node creation
+   * Context & Problem:
+   * User complaint: "ClubCalendarDialog has 21 outgoing arrows to nodes all called div or button. 
+   * This doesn't give me any information as a user."
+   * 
+   * Solution:
+   * - <button aria-label="Save">Save</button> → CREATE node labeled "Save"
+   * - <div onClick={selectDate}>12</div> → SKIP node; create direct edge: Component → selectDate
+   * - <button onClick={handleClick}>Cancel</button> → CREATE node labeled "Cancel" (text content)
+   * 
+   * Node Creation Rules:
+   * 1. Elements WITH event handlers AND semantic identifiers → CREATE node
+   * 2. Elements WITH event handlers BUT NO semantic identifiers → SKIP node (create direct edges)
+   * 3. Data sources (API calls, fetch) → Always CREATE node
+   * 4. State management (useState) → Always CREATE node
+   * 5. Passive display elements without handlers → SKIP node
    * 
    * Examples:
-   * - shouldCreateNodeForElement(button with onClick) → true (interactive)
-   * - shouldCreateNodeForElement(h1 with text) → false (passive formatting)
-   * - shouldCreateNodeForElement(fetch call) → true (data source)
+   * - shouldCreateNodeForElement(<button aria-label="Save" onClick={...}>) → true (has semantic ID)
+   * - shouldCreateNodeForElement(<div onClick={selectDate}>12</div>) → false (no semantic ID)
+   * - shouldCreateNodeForElement(<button onClick={save}>Cancel</button>) → true (text content = semantic ID)
+   * - shouldCreateNodeForElement(fetch('/api/users')) → true (data source)
+   * - shouldCreateNodeForElement(<h1>Title</h1>) → false (passive display)
    * 
    * @param element - Informative element to check
    * @returns boolean - True if element should become a node, false to skip
    */
   private shouldCreateNodeForElement(element: InformativeElementInfo): boolean {
-    // Always create nodes for elements with event handlers
-    // These capture user interactions and trigger business logic
-    // Example: <button onClick={handleClick}> should become a node
+    // Rule 1: Elements with event handlers - ONLY create node if has semantic identifier
+    // This is the key change from previous implementation
+    // Previously: all elements with handlers became nodes
+    // Now: only elements with handlers AND semantic identifiers become nodes
     if (element.eventHandlers && element.eventHandlers.length > 0) {
-      return true;
+      // Semantic Filtering: Check if element has semantic identifier
+      // If YES → create node with semantic name
+      // If NO → skip node creation (direct Component→Handler edges will be created instead)
+      return element.hasSemanticIdentifier === true;
     }
     
-    // Always create nodes for data sources (API calls, fetch operations)
+    // Rule 2: Always create nodes for data sources (API calls, fetch operations)
     // These represent data flow from external sources
     // Example: fetch('/api/users') should become a node
     if (element.type === 'data-source') {
       return true;
     }
     
-    // Always create nodes for state management
+    // Rule 3: Always create nodes for state management
     // These represent state changes and data flow within the application
     // Example: useState, useReducer should become nodes
     if (element.type === 'state-management') {
       return true;
     }
     
-    // Filter out common HTML formatting elements without handlers
+    // Rule 4: Filter out common HTML formatting elements without handlers
     // These are just DOM structure/styling, not functional units
     // They don't help understand business logic or data flow
     const formattingElements = [
@@ -1419,8 +1455,6 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
     }
     
     // Keep everything else (custom elements, input fields, complex structures)
-    // This includes: input, select, textarea, button (all typically have handlers)
-    // But if they don't have handlers, they would have been caught by the handler check above
     return true;
   }
 
@@ -1567,10 +1601,14 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
   private createEventHandlerEdges(allNodes: NodeInfo[], components: ComponentInfo[]): EdgeInfo[] {
     const edges: EdgeInfo[] = [];
     
-    // Get all JSX element nodes (interactive elements)
+    // Semantic Filtering Update:
+    // Only process JSX element nodes WITH semantic identifiers
+    // JSX elements WITHOUT semantic identifiers are handled by createDirectHandlerEdges method
+    // This ensures we don't create duplicate edges for non-semantic elements
     const jsxElementNodes = allNodes.filter(node => 
       node.properties.elementType !== undefined &&
-      node.codeOwnership === 'internal'
+      node.codeOwnership === 'internal' &&
+      node.properties.hasSemanticIdentifier === true // NEW: Only semantic JSX elements
     );
     
     // Get all handler function nodes
@@ -1651,6 +1689,146 @@ export class DependencyAnalyzerImpl implements DependencyAnalyzer {
         totalJSXElements: jsxElementNodes.length,
         totalHandlerFunctions: handlerFunctionNodes.length,
         eventHandlerEdges: edges.length
+      });
+    }
+    
+    return edges;
+  }
+
+  /**
+   * Semantic Filtering: Creates direct Component → Handler function edges
+   * for JSX elements WITHOUT semantic identifiers
+   * 
+   * Business Logic (per PRD §3.1.2 - Semantic Filtering):
+   * When JSX element has event handler but NO semantic identifier (aria-label, data-testid, id, text),
+   * we skip creating a node for the JSX element and instead create direct edges from the parent
+   * component to the handler function(s).
+   * 
+   * Context & Problem:
+   * User feedback: "I see 21 div nodes with no information. I want to see the handler functions directly."
+   * Solution: Component → selectDate (direct) instead of Component → div → selectDate (indirect)
+   * 
+   * Implementation Strategy:
+   * 1. Find all informative elements with event handlers BUT no semantic identifiers
+   * 2. Find their parent components
+   * 3. Extract handler function names from event handlers
+   * 4. Create direct "calls" edges: Parent Component → Handler Function
+   * 5. Support multiple function calls per handler (arrow functions with func1(); func2();)
+   * 
+   * Examples:
+   * - <div onClick={selectDate}>12</div> (no semantic ID, in ClubCalendarDialog)
+   *   → Direct edge: ClubCalendarDialog --calls--> selectDate
+   * 
+   * - <button onClick={() => { validate(); submit(); }}>Save</button> (no semantic ID, in FormComponent)
+   *   → Direct edges: FormComponent --calls--> validate
+   *                   FormComponent --calls--> submit
+   * 
+   * - <div data-testid="calendar-day" onClick={selectDate}>12</div> (HAS semantic ID)
+   *   → This method skips it; node created with label "calendar-day"
+   * 
+   * Edge Cases Handled:
+   * - Inline arrow functions with no function calls: Skip edge creation (per user requirement)
+   * - Handler function not found as node: Skip edge creation (per user requirement)
+   * - Multiple handlers on same element: Create edge for each handler
+   * - Multiple function calls in one handler: Create edge for each function
+   * 
+   * @param allNodes - All nodes in the graph
+   * @param components - Component information with informative elements
+   * @returns EdgeInfo[] - Array of direct component-to-handler edges
+   */
+  private createDirectHandlerEdges(allNodes: NodeInfo[], components: ComponentInfo[]): EdgeInfo[] {
+    const edges: EdgeInfo[] = [];
+    
+    // Get all handler function nodes for lookup
+    const handlerFunctionNodes = allNodes.filter(node =>
+      node.properties.isEventHandler === true &&
+      node.codeOwnership === 'internal'
+    );
+    
+    // Process each component
+    for (const component of components) {
+      // Find component node
+      const componentNode = allNodes.find(node => 
+        node.label === component.name && 
+        node.codeOwnership === 'internal' &&
+        (node.nodeType === 'function' || node.properties.type)
+      );
+      
+      if (!componentNode) {
+        continue;
+      }
+      
+      // Find informative elements with handlers BUT NO semantic identifiers
+      // These are the JSX elements that didn't become nodes due to semantic filtering
+      const nonSemanticElements = component.informativeElements.filter(element =>
+        element.eventHandlers &&
+        element.eventHandlers.length > 0 &&
+        element.hasSemanticIdentifier !== true // Key filter: NO semantic identifier
+      );
+      
+      // Create direct edges for each non-semantic element
+      for (const element of nonSemanticElements) {
+        // Process each event handler on this element
+        for (const eventHandler of element.eventHandlers) {
+          // Extract function names from handler (supports multiple calls)
+          // handler.handler format: "handleClick" or "func1, func2, func3"
+          const functionNames = eventHandler.handler
+            .split(',')
+            .map(name => name.trim())
+            .filter(name => name.length > 0);
+          
+          // Edge Case: Inline arrow function with no function calls
+          // Example: onClick={() => {}} with no function calls
+          // Per user requirement: Do not create edge
+          if (functionNames.length === 0) {
+            continue;
+          }
+          
+          // Create direct edge to each function
+          for (const functionName of functionNames) {
+            // Find the handler function node
+            const handlerNode = handlerFunctionNodes.find(node => 
+              node.label === functionName
+            );
+            
+            // Edge Case: Handler function not found as node
+            // Per user requirement: Skip edge creation
+            if (!handlerNode) {
+              if (this.logger) {
+                this.logger.logWarning('Direct handler edge skipped: handler function node not found', {
+                  component: component.name,
+                  element: element.name,
+                  handler: functionName,
+                  eventType: eventHandler.name
+                });
+              }
+              continue;
+            }
+            
+            // Create direct edge: Component --calls--> Handler Function
+            edges.push({
+              id: this.generateEdgeId(),
+              source: componentNode.id,
+              target: handlerNode.id,
+              relationship: 'calls' as RelationshipType,
+              properties: {
+                // Store JSX element details in edge metadata (not visible as node)
+                triggerElement: element.name,
+                eventType: eventHandler.name,
+                handlerType: eventHandler.type,
+                isDirect: true, // Flag to indicate this is a direct edge (JSX node skipped)
+                reason: 'no-semantic-identifier' // Explains why JSX node was skipped
+              }
+            });
+          }
+        }
+      }
+    }
+    
+    if (this.logger) {
+      this.logger.logInfo('Direct handler edges created (semantic filtering)', {
+        totalComponents: components.length,
+        directHandlerEdges: edges.length
       });
     }
     

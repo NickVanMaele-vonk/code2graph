@@ -386,6 +386,9 @@ export class ASTParserImpl {
         
         // Phase B: Only create ONE element per JSX node, even if it has both binding and handlers
         if (hasBinding || hasHandlers) {
+          // Semantic Filtering: Extract semantic identifier for node creation filtering
+          const semanticIdentifier = this.extractSemanticIdentifier(path.node);
+          
           const elementInfo: InformativeElementInfo = {
             // Prioritize 'input' type if has event handlers (user interaction is primary purpose)
             type: hasHandlers ? 'input' : 'display',
@@ -399,7 +402,10 @@ export class ASTParserImpl {
             line: path.node.loc?.start.line,
             column: path.node.loc?.start.column,
             file: filePath,
-            parentComponent: currentComponentName // Phase B: Track parent component
+            parentComponent: currentComponentName, // Phase B: Track parent component
+            // Semantic Filtering: Store semantic identifier and flag
+            semanticIdentifier: semanticIdentifier,
+            hasSemanticIdentifier: semanticIdentifier !== undefined
           };
           informativeElements.push(elementInfo);
         }
@@ -960,6 +966,128 @@ export class ASTParserImpl {
     });
 
     return handlers;
+  }
+
+  /**
+   * Extracts semantic identifier from JSX element props
+   * 
+   * Business Logic (Semantic Filtering - PRD §3.1.2):
+   * JSX elements with event handlers should only become nodes if they have semantic identifiers.
+   * This reduces graph noise by filtering out generic divs/buttons without meaningful names.
+   * 
+   * Priority Order (as per user requirements):
+   * 1. aria-label: Accessibility label (highest priority)
+   * 2. data-testid: Test identifier (second priority)
+   * 3. id: HTML id attribute (third priority)
+   * 4. Text content: Short text content as fallback (e.g., <button>Save</button> → "Save")
+   * 
+   * Context:
+   * Problem: ClubCalendarDialog had 21 nodes labeled "div" and "button" - uninformative
+   * Solution: Only create nodes for JSX elements with semantic meaning
+   * 
+   * Examples:
+   * - <button aria-label="Save changes">Save</button> → "Save changes"
+   * - <div data-testid="calendar-day" onClick={...}>12</div> → "calendar-day"
+   * - <button id="submit-btn" onClick={...}>Submit</button> → "submit-btn"
+   * - <button onClick={handleClick}>Cancel</button> → "Cancel" (text content fallback)
+   * - <div onClick={selectDate}>12</div> → undefined (no semantic identifier, won't become node)
+   * 
+   * @param node - The JSX element node
+   * @returns string | undefined - Semantic identifier value or undefined if none found
+   */
+  private extractSemanticIdentifier(node: t.JSXElement): string | undefined {
+    // Priority 1: Check for aria-label attribute
+    const ariaLabel = node.openingElement.attributes?.find((attr: t.JSXAttribute | t.JSXSpreadAttribute) =>
+      t.isJSXAttribute(attr) &&
+      t.isJSXIdentifier(attr.name) &&
+      attr.name.name === 'aria-label' &&
+      attr.value &&
+      t.isStringLiteral(attr.value)
+    );
+    
+    if (ariaLabel && t.isJSXAttribute(ariaLabel) && ariaLabel.value && t.isStringLiteral(ariaLabel.value)) {
+      return ariaLabel.value.value;
+    }
+    
+    // Priority 2: Check for data-testid attribute
+    const dataTestId = node.openingElement.attributes?.find((attr: t.JSXAttribute | t.JSXSpreadAttribute) =>
+      t.isJSXAttribute(attr) &&
+      t.isJSXIdentifier(attr.name) &&
+      attr.name.name === 'data-testid' &&
+      attr.value &&
+      t.isStringLiteral(attr.value)
+    );
+    
+    if (dataTestId && t.isJSXAttribute(dataTestId) && dataTestId.value && t.isStringLiteral(dataTestId.value)) {
+      return dataTestId.value.value;
+    }
+    
+    // Priority 3: Check for id attribute
+    const idAttr = node.openingElement.attributes?.find((attr: t.JSXAttribute | t.JSXSpreadAttribute) =>
+      t.isJSXAttribute(attr) &&
+      t.isJSXIdentifier(attr.name) &&
+      attr.name.name === 'id' &&
+      attr.value &&
+      t.isStringLiteral(attr.value)
+    );
+    
+    if (idAttr && t.isJSXAttribute(idAttr) && idAttr.value && t.isStringLiteral(idAttr.value)) {
+      return idAttr.value.value;
+    }
+    
+    // Priority 4 (Fallback): Extract short text content
+    const textContent = this.extractTextContent(node);
+    if (textContent) {
+      return textContent;
+    }
+    
+    // No semantic identifier found
+    return undefined;
+  }
+
+  /**
+   * Extracts short text content from JSX element as fallback semantic identifier
+   * 
+   * Business Logic:
+   * For JSX elements without explicit semantic identifiers (aria-label, data-testid, id),
+   * use short text content as semantic name. This handles common patterns like:
+   * <button onClick={handleClick}>Save</button> → "Save"
+   * <button onClick={handleSubmit}>Submit Form</button> → "Submit Form"
+   * 
+   * Constraints:
+   * - Only extract if text is short (≤ 30 characters) to avoid verbose labels
+   * - Only extract if there's a single, simple text child
+   * - Trim whitespace and return undefined if empty after trimming
+   * 
+   * Examples:
+   * - <button>Save</button> → "Save"
+   * - <button>Cancel</button> → "Cancel"
+   * - <div>12</div> → "12"
+   * - <div><span>Complex</span> content</div> → undefined (multiple children)
+   * - <div>Very long text that exceeds character limit</div> → undefined (too long)
+   * 
+   * @param node - The JSX element node
+   * @returns string | undefined - Text content if suitable, undefined otherwise
+   */
+  private extractTextContent(node: t.JSXElement): string | undefined {
+    // Only extract if there's exactly one child
+    if (!node.children || node.children.length !== 1) {
+      return undefined;
+    }
+    
+    const child = node.children[0];
+    
+    // Check if child is JSXText (simple text node)
+    if (t.isJSXText(child)) {
+      const text = child.value.trim();
+      
+      // Only use text if it's short (≤ 30 characters) and not empty
+      if (text && text.length > 0 && text.length <= 30) {
+        return text;
+      }
+    }
+    
+    return undefined;
   }
 
   /**

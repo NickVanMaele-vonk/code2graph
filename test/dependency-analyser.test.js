@@ -992,14 +992,16 @@ describe('Dependency Analyzer', () => {
           children: [],
           informativeElements: [
             { 
-              name: 'button', // HTML element with handler → CREATE node
+              name: 'button', // HTML element with handler → CREATE node (Semantic Filtering: needs semantic ID)
               type: 'input',
               elementType: 'JSXElement',
               props: {},
               eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
               dataBindings: [],
               line: 10,
-              file: '/app/component.tsx'
+              file: '/app/component.tsx',
+              semanticIdentifier: 'Click', // Semantic Filtering: button has semantic identifier
+              hasSemanticIdentifier: true
             },
             { 
               name: 'div', // HTML formatting element without handler → SKIP node (Phase H)
@@ -1019,13 +1021,13 @@ describe('Dependency Analyzer', () => {
 
       const graph = analyzer.buildDependencyGraph(components);
       
-      // Phase H: Only interactive elements with handlers become nodes
-      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      // Semantic Filtering: Button node uses semantic identifier as label
+      const buttonNode = graph.nodes.find(n => n.label === 'Click');
       const divNode = graph.nodes.find(n => n.label === 'div');
       const componentNode = graph.nodes.find(n => n.label === 'MyComponent');
       const handleClickNode = graph.nodes.find(n => n.label === 'handleClick');
       
-      assert.ok(buttonNode, 'Should create node for button (has onClick handler)');
+      assert.ok(buttonNode, 'Should create node for button (has onClick handler and semantic identifier)');
       assert.ok(!divNode, 'Should NOT create node for div (passive display without handlers - Phase H filtering)');
       assert.ok(componentNode, 'Should create node for MyComponent');
       assert.ok(handleClickNode, 'Should create node for handleClick (handler function)');
@@ -1034,7 +1036,7 @@ describe('Dependency Analyzer', () => {
       assert.strictEqual(handleClickNode.properties.isEventHandler, true, 'Handler node should be marked as event handler');
       assert.strictEqual(handleClickNode.properties.parentComponent, 'MyComponent', 'Handler should belong to MyComponent');
       
-      // Phase H: Internal nodes = component + 1 interactive element (button) + 1 handler function = 3
+      // Semantic Filtering: Internal nodes = component + 1 interactive element (button with semantic ID) + 1 handler function = 3
       // The div is filtered out because it's a passive formatting element
       const internalNodes = graph.nodes.filter(n => n.codeOwnership === 'internal');
       assert.strictEqual(internalNodes.length, 3, 'Should have component + button + handler (div filtered out)');
@@ -1059,7 +1061,9 @@ describe('Dependency Analyzer', () => {
               eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleClick' }],
               dataBindings: [],
               line: 10,
-              file: '/app/parent.tsx'
+              file: '/app/parent.tsx',
+              semanticIdentifier: 'Cancel', // Has semantic identifier
+              hasSemanticIdentifier: true
             },
             { 
               name: 'ChildComponent', // Component usage → metadata only (Phase F)
@@ -1102,9 +1106,9 @@ describe('Dependency Analyzer', () => {
       const graph = analyzer.buildDependencyGraph(components);
       
       // Phase H: Only interactive HTML elements with handlers create nodes
-      const buttonNode = graph.nodes.find(n => n.label === 'button');
+      const buttonNode = graph.nodes.find(n => n.label === 'Cancel'); // Now uses semantic identifier
       const divNode = graph.nodes.find(n => n.label === 'div');
-      assert.ok(buttonNode, 'Should create node for button (has event handler)');
+      assert.ok(buttonNode, 'Should create node for button (has event handler and semantic ID)');
       assert.ok(!divNode, 'Should NOT create node for div (passive formatting without handlers - Phase H filtering)');
       
       // Phase F: Component usage should NOT create duplicate node
@@ -1116,6 +1120,260 @@ describe('Dependency Analyzer', () => {
       assert.ok(childComponent.renderLocations, 'ChildComponent should have renderLocations');
       assert.strictEqual(childComponent.renderLocations.length, 1, 'Should record one usage location');
       assert.strictEqual(childComponent.renderLocations[0].file, '/app/parent.tsx', 'Should record correct usage file');
+    });
+  });
+
+  describe('Semantic Filtering and Direct Handler Edges', () => {
+    it('should create node for JSX element WITH semantic identifier', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'button',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleSave' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx',
+              semanticIdentifier: 'Save changes',  // Has semantic identifier
+              hasSemanticIdentifier: true
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      const buttonNode = graph.nodes.find(n => n.label === 'Save changes');
+      assert.ok(buttonNode, 'Should create node for button with semantic identifier');
+      assert.strictEqual(buttonNode.properties.semanticIdentifier, 'Save changes', 'Should store semantic identifier in properties');
+      assert.strictEqual(buttonNode.properties.hasSemanticIdentifier, true, 'Should set hasSemanticIdentifier flag');
+    });
+
+    it('should NOT create node for JSX element WITHOUT semantic identifier', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'div',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'selectDate' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx',
+              semanticIdentifier: undefined,  // No semantic identifier
+              hasSemanticIdentifier: false
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      const divNode = graph.nodes.find(n => n.label === 'div');
+      assert.ok(!divNode, 'Should NOT create node for JSX element without semantic identifier');
+    });
+
+    it('should create direct Component → Handler edge for non-semantic JSX element', () => {
+      const components = [
+        {
+          name: 'ClubCalendarDialog',
+          type: 'functional',
+          file: '/app/calendar.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'div',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'selectDate' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/calendar.tsx',
+              parentComponent: 'ClubCalendarDialog',
+              semanticIdentifier: undefined,  // No semantic identifier
+              hasSemanticIdentifier: false
+            }
+            // Handler function node 'selectDate' will be created automatically from eventHandlers
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // Component node should exist
+      const componentNode = graph.nodes.find(n => n.label === 'ClubCalendarDialog');
+      assert.ok(componentNode, 'Should create node for component');
+      
+      // Handler function node should exist (created automatically from eventHandlers)
+      const handlerNode = graph.nodes.find(n => n.label === 'selectDate' && n.properties.isEventHandler === true);
+      assert.ok(handlerNode, 'Should create node for handler function');
+      
+      // Direct edge Component → Handler should exist
+      const directEdge = graph.edges.find(e => 
+        e.source === componentNode.id && 
+        e.target === handlerNode.id &&
+        e.relationship === 'calls'
+      );
+      assert.ok(directEdge, 'Should create direct edge from Component to Handler');
+      assert.strictEqual(directEdge.properties.isDirect, true, 'Edge should be marked as direct');
+      assert.strictEqual(directEdge.properties.triggerElement, 'div', 'Edge should store trigger element');
+      assert.strictEqual(directEdge.properties.eventType, 'onClick', 'Edge should store event type');
+    });
+
+    it('should create multiple direct edges for handler with multiple function calls', () => {
+      const components = [
+        {
+          name: 'FormComponent',
+          type: 'functional',
+          file: '/app/form.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'button',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'arrow-function', handler: 'validate, submit' }], // Multiple calls
+              dataBindings: [],
+              line: 10,
+              file: '/app/form.tsx',
+              parentComponent: 'FormComponent',
+              semanticIdentifier: undefined,
+              hasSemanticIdentifier: false
+            }
+            // Handler function nodes 'validate' and 'submit' will be created automatically from eventHandlers
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      const componentNode = graph.nodes.find(n => n.label === 'FormComponent');
+      const validateNode = graph.nodes.find(n => n.label === 'validate' && n.properties.isEventHandler === true);
+      const submitNode = graph.nodes.find(n => n.label === 'submit' && n.properties.isEventHandler === true);
+      
+      // Should create direct edge to both functions
+      const validateEdge = graph.edges.find(e => 
+        e.source === componentNode.id && e.target === validateNode.id
+      );
+      const submitEdge = graph.edges.find(e => 
+        e.source === componentNode.id && e.target === submitNode.id
+      );
+      
+      assert.ok(validateEdge, 'Should create direct edge to validate function');
+      assert.ok(submitEdge, 'Should create direct edge to submit function');
+    });
+
+    it('should NOT create edge for inline arrow function with no function calls', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'div',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'arrow-function', handler: '' }], // No function calls
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx',
+              parentComponent: 'MyComponent',
+              semanticIdentifier: undefined,
+              hasSemanticIdentifier: false
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      const componentNode = graph.nodes.find(n => n.label === 'MyComponent');
+      
+      // Should NOT create any edges from component (handler function is empty)
+      const callsEdges = graph.edges.filter(e => 
+        e.source === componentNode.id && e.relationship === 'calls'
+      );
+      assert.strictEqual(callsEdges.length, 0, 'Should not create edge for empty handler');
+    });
+
+    it('should use semantic identifier as node label', () => {
+      const components = [
+        {
+          name: 'MyComponent',
+          type: 'functional',
+          file: '/app/component.tsx',
+          props: [],
+          state: [],
+          hooks: [],
+          children: [],
+          informativeElements: [
+            {
+              name: 'button',
+              type: 'input',
+              elementType: 'JSXElement',
+              props: {},
+              eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'handleSave' }],
+              dataBindings: [],
+              line: 10,
+              file: '/app/component.tsx',
+              semanticIdentifier: 'Save changes',
+              hasSemanticIdentifier: true
+            }
+          ],
+          imports: [],
+          exports: []
+        }
+      ];
+
+      const graph = analyzer.buildDependencyGraph(components);
+      
+      // Node should use semantic identifier as label, not HTML tag name
+      const buttonNode = graph.nodes.find(n => n.properties.semanticIdentifier === 'Save changes');
+      assert.ok(buttonNode, 'Should create node with semantic identifier');
+      assert.strictEqual(buttonNode.label, 'Save changes', 'Should use semantic identifier as label, not "button"');
     });
 
     // Phase C tests: External dependency consolidation
@@ -1587,7 +1845,9 @@ describe('Dependency Analyzer', () => {
             file: '/src/ComplexComponent.tsx', // Phase G: Added required property for InformativeElementInfo
             props: { onClick: 'onSubmit' },
             eventHandlers: [{ name: 'onClick', type: 'function-reference', handler: 'onSubmit' }],
-            dataBindings: [] // Phase G: Already string[] format
+            dataBindings: [], // Phase G: Already string[] format
+            semanticIdentifier: 'Submit', // Semantic Filtering: button needs semantic ID to create node
+            hasSemanticIdentifier: true
           },
           {
             type: 'data-source',
@@ -1622,8 +1882,11 @@ describe('Dependency Analyzer', () => {
       const apiCalls = analyzer.traceAPICalls([complexComponent]);
 
       assert.ok(graph);
-      // Phase G: Updated expectation to account for event handler function node
-      // 7 nodes = Component + 3 informative elements + 2 imports + 1 handler function (onSubmit)
+      // Semantic Filtering: Updated node count calculation
+      // 7 nodes = Component (1) + submit-button with semantic ID (1) + fetchData data-source (1) + 
+      //           react external (1) + axios external (1) + onSubmit handler function (1) + 
+      //           data-list display filtered out (0, no handler)
+      // Note: submit-button creates node because it has semantic identifier
       assert.strictEqual(graph.nodes.length, 7);
       assert.strictEqual(apiCalls.length, 2); // fetchData + axios import
     });

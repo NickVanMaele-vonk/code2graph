@@ -5,9 +5,12 @@ import pluginReact from "eslint-plugin-react";
 import { defineConfig } from "eslint/config";
 
 export default defineConfig([
-  // Exclude cloned-repos directory from linting
+  // Exclude cloned-repos directory and stub test files from linting
   {
-    ignores: ["cloned-repos/**/*"]
+    ignores: [
+      "cloned-repos/**/*",
+      "test/visualizer.test.js" // Stub test file with commented-out tests pending visualizer refactoring
+    ]
   },
   { 
     files: ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"], 
