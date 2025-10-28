@@ -2,10 +2,11 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.1
-- **Date**: 2025-10-06
+- **Version**: 1.2
+- **Date**: 2025-10-28
 - **Author**: Nick Van Maele
 - **Project**: code2graph
+- **Last Updated**: Aligned with Change Request 002 (4-tier architecture, "displays" relationship)
 
 ---
 
@@ -98,9 +99,9 @@ A specialized tool that:
     - JSX elements with event handlers:
       - IF element has semantic identifier (aria-label, data-testid, id attribute): Use that semantic name as node label
       - ELSE: Do NOT create node; create direct edges from Component to handler function(s) 
-  - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front end", "middleware", "database"}
+  - **Data Typing**: Each node has "datatype" label with values {"array", "list", "integer", "table", "view"} and "category" label with values {"front-end", "api", "middleware", "database", "library"}
   - **What Does NOT Become a Node**: External APIs (become end nodes in path); React Context providers; UI-only elements (styling, navigation without data capture); early return components; index files (containers); unused imports; generic JSX elements with event handlers but no semantic identifiers (create direct edges to handlers instead)
-  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"imports", "calls", "reads", "writes to", "renders", "contains"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
+  - **Edge Creation Rules**: Direction from caller to callee, from data to database; types {"imports", "calls", "reads", "writes to", "renders", "contains", "displays"}; event handlers with multiple function calls get multiple outgoing edges; single fetch with multiple tables gets multiple edges to each table; circular dependencies stop after second traversal
   - **Event Handler Edges**: 
     - For JSX elements WITH semantic identifiers: Create "contains" edge from Component to JSX element, then "calls" edge from JSX element to handler function(s)
     - For JSX elements WITHOUT semantic identifiers: Create direct "calls" edge from Component to handler function(s), skip JSX element node creation
@@ -145,20 +146,27 @@ A specialized tool that:
 - **Assumption**: Repository is self-contained with no external callers
 - **Examples**: API endpoint `/api/:clubid/persons/` is dead code if defined but never called in the codebase
 - **Scoring Method**: 100 = confirmed incoming edge, meaning that at least one other function or code fragment is calling the current node; 0 = no incoming edge based on static code analysis of repo; scores 1-99 are probability scores to be used in a future version of code2graph that takes into account calls from external code. 
-- **Category**: each node has a label "category" which stores the name of the layer in which the node is active. Possible values are "front end", "middleware", "database". (This list of values can be extended when the need arises)
+- **Category**: each node has a label "category" which stores the name of the layer in which the node is active. Possible values are "front-end", "api", "middleware", "database", "library". 
+  - **"front-end"**: UI sections, components, buttons, forms (leftmost in hierarchical layout - where user interaction starts)
+  - **"api"**: API endpoints and routes (center-right - API layer)
+  - **"middleware"**: Business logic functions, handlers, validators (center-left - processing layer)
+  - **"database"**: Database tables, views, queries (rightmost - data persistence layer)
+  - **"library"**: External dependencies (positioned based on usage context)
 
 #### 3.1.5 Output Generation
 - **JSON Format**: Primary structured output format with complete dependency graph
 - **GraphML Format**: For professional graph analysis tools
 - **DOT Format**: For Graphviz visualization
 - **Node Structure**: Every function/informative element = node, function calls = edges
-- **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains"
+- **Edge types**: possible values for relationship: "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains" | "displays"
+  - "displays": UI Section → Component (section-level membership - "this section shows this component to the user")
   - "contains": Component → JSX Element with semantic identifier (structural parent-child for meaningful interactive elements only)
   - "renders": Component → Component (component usage/rendering)
   - "imports": Component → External Package (dependency)
   - "calls": Component/JSX/API → Function/API (invocation - direct from Component if JSX has no semantic identifier)
   - "reads": API → Database Table/View (data read)
   - "writes to": API → Database Table/View (data write)
+  - **Semantic distinction**: A tab "displays" a button (UI organization), while a form "contains" a field (internal structure)
 - **Dead Code Identification**: Nodes with liveCodeScore = 0 (no incoming edges)
 - **Live Code Identification**: Nodes with liveCodeScore = 100 (has incoming edges)
 - **Dead Code Report**: List dead codes, i.e., nodes with liveCodeScore = 0
@@ -353,20 +361,20 @@ Example: if repo URL = 'https://github.com/JohnDoe/codeSample then add './log/co
 - **Node Properties**: 
   - `id`: Unique identifier
   - `label`: Human-readable name
-  - `type`: Component type ("function" | "API" | "table" | "view" | "route" | "external-dependency" | string)
+  - `type`: Component type ("function" | "API" | "table" | "view" | "route" | "external-dependency" | "ui-section" | string)
   - `file`: Source file location
   - `line`: Line number (optional, required for components)
   - `column`: Column number (optional, required for components)
   - `liveCodeScore`: Integer 0-100 (0 = dead code, 100 = live code)
   - `datatype`: Data type label (array, list, integer, table, view, etc.)
-  - `category`: Layer category (front end, middleware, database, library)
+  - `category`: Layer category (front-end, api, middleware, database, library)
   - `codeOwnership`: "internal" (custom code) or "external" (standard libraries) - enables filtering
   - `isInfrastructure`: Boolean flag for external dependencies (enables easy filtering)
 - **Edge Properties**:
   - `source`: Source node ID
   - `target`: Target node ID
-  - `relationship`: Type of relationship ("imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains")
-  - Direction follows UI → Database flow principle
+  - `relationship`: Type of relationship ("imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains" | "displays")
+  - Direction follows UI → Database flow principle (event flow sequence)
 - **Metadata**:
   - Version number of code2graph tool
   - UTC timestamp of output file creation
@@ -534,6 +542,38 @@ nodes.filter(n => n.liveCodeScore === 0)
 // Live custom code: Active development focus
 nodes.filter(n => n.codeOwnership === "internal" && n.liveCodeScore === 100)
 ```
+
+---
+
+## 16. Change Log
+
+### Version 1.2 (October 28, 2025)
+**Aligned with Change Request 002: Hierarchical Layout with UI Section Grouping**
+
+**Type System Updates**:
+- Changed `"front end"` to `"front-end"` (hyphenated) for consistency
+- Added `"api"` as new category for API endpoints (5 categories total)
+- Added `"ui-section"` as new node type for UI sections/tabs
+- Added `"displays"` as new relationship type for section-to-component edges
+
+**Category System Updates**:
+- Expanded from 3-tier to **4-tier architecture**
+- Categories now follow event flow sequence: front-end → middleware → api → database
+- **"front-end"**: UI sections, components (leftmost - where user interaction starts)
+- **"middleware"**: Business logic functions, handlers, validators (center-left)
+- **"api"**: API endpoints, routes (center-right)
+- **"database"**: Tables, views, queries (rightmost)
+- **"library"**: External dependencies (infrastructure)
+
+**Relationship System Updates**:
+- Added "displays" relationship for UI section membership
+- Clarified semantic distinction: tabs "display" buttons (organization), forms "contain" fields (structure)
+- Updated relationship types list to include "displays"
+
+**Event Flow Principle**:
+- Categories now aligned with code execution sequence
+- Example: Button → handleClick() → validateInput() → /api/users → users_table
+- Enables intuitive left-to-right visualization of application flow
 
 ---
 

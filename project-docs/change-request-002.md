@@ -1,7 +1,8 @@
 # Change Request 002: Hierarchical Layout with UI Section Grouping
 
+**Version**: 1.1  
 **Date**: October 28, 2025  
-**Status**: Planning Phase  
+**Status**: Planning Phase - Design Clarified  
 **Estimated Effort**: 92-140 hours  
 **Priority**: High  
 
@@ -23,12 +24,20 @@ In the Code2Graph Visualizer, the codebase is presented as a force-directed grap
 ## 2. Desired Effects
 
 ### 2.1 Hierarchical Left-to-Right Layout
-Show all UI elements on the left-hand side, all database tables on the right-hand side, and all intermediate nodes (middleware, services, APIs) in between. The logical flow should go from left to right on the screen with edges predominantly flowing left-to-right.
+Show all UI elements on the left-hand side, all database tables on the right-hand side, and all intermediate nodes (functions, services, APIs) in between. The logical flow should go from left to right on the screen with edges predominantly flowing left-to-right, following the sequence of events triggered in the code.
 
 **Visual Goal**: 
 ```
-[UI Layer]  →  [Middleware Layer]  →  [Database Layer]
-  (Left)           (Center)              (Right)
+[Front-End Layer]  →  [Middleware Layer]  →  [API Layer]  →  [Database Layer]
+   (Leftmost)           (Center-Left)         (Center-Right)      (Rightmost)
+ UI Sections/          Business Logic/         API Endpoints      Tables/Views
+  Components             Functions
+```
+
+**Event Flow Example**:
+```
+User clicks → handleClick() → validateInput() → callAPI() → /api/users → SELECT * FROM users
+[front-end]    [middleware]     [middleware]      [middleware]   [api]        [database]
 ```
 
 ### 2.2 UI Section Grouping
@@ -57,7 +66,7 @@ For major UI sections (visible tabs like Home, Manage, Admin, etc.; and menu ite
   label: "Manage", //visible name of tab on the app UI screen
   nodeType: "ui-section", 
   nodeCategory: "front-end", 
-  datatype: "section", 
+  datatype: "array", // UI sections are containers holding multiple components, like arrays
   liveCodeScore: 100, 
   file: "client/src/App.tsx",
   line: 58, //line where definition starts
@@ -69,6 +78,8 @@ For major UI sections (visible tabs like Home, Manage, Admin, etc.; and menu ite
   }
 }
 ```
+
+**Note on datatype choice**: UI section nodes use `datatype: "array"` because they conceptually function as containers holding multiple components, similar to how arrays hold multiple elements. While a datatype like "section" might seem semantically clearer, it would add unnecessary complexity to the type system. Using "array" leverages the existing type definition and accurately represents the container nature of UI sections.
 
 #### Example of a Regular Component Node (Not a UI Section)
 ```typescript
@@ -104,6 +115,23 @@ For major UI sections (visible tabs like Home, Manage, Admin, etc.; and menu ite
 }
 ```
 
+**Semantic Distinction: "displays" vs "contains"**
+
+These two relationship types serve different purposes in the graph:
+
+| Relationship | Source → Target | Semantic Meaning | Example | Usage Context |
+|--------------|-----------------|------------------|---------|---------------|
+| `"displays"` | UI Section → Component | Section-level membership: "This section shows this component to the user" | `[Manage Tab] --displays--> [ClubMembersButton]` | UI organization and navigation hierarchy |
+| `"contains"` | Component → JSX Element | Structural parent-child: "This component structurally owns this element" | `[ContactForm] --contains--> [EmailField]` | Component internal structure |
+
+**Key Principle**: 
+- A **tab displays a button** (high-level UI organization)
+- A **form contains a field** (internal component structure)
+
+**Rationale**: This distinction allows filtering and analysis at different levels:
+- Filter by "displays" to see what's in each UI section
+- Filter by "contains" to see component internal structure
+
 #### Visual Representation
 ```
 [Manage Section Node]
@@ -115,6 +143,69 @@ For major UI sections (visible tabs like Home, Manage, Admin, etc.; and menu ite
     └── displays → [Club Settings Button]
 ```
 
+### 3.3 Design Decisions and Rationale
+
+#### 3.3.1 Naming Convention: "front-end" (hyphenated)
+**Decision**: Use `"front-end"` (with hyphen) for nodeCategory values
+
+**Rationale**: Consistency with standard technical terminology and improved readability
+
+**Updates Required**: 
+- Change existing `"front end"` (space) to `"front-end"` (hyphen) throughout codebase
+- Update PRD and Architecture documents to reflect this convention
+
+#### 3.3.2 New Category: "api"
+**Decision**: Add `"api"` as a distinct nodeCategory separate from `"middleware"`
+
+**Rationale**: 
+- API endpoints represent a distinct architectural layer in the event flow
+- Enables proper left-to-right positioning in hierarchical layout
+- Follows the event sequence: front-end → middleware → api → database
+
+**Layer Distinction**:
+- **"middleware"**: Business logic functions, handlers, validation, processing
+- **"api"**: API endpoint definitions (routes like `/api/users`, `/api/clubs/:id`)
+
+#### 3.3.3 UI Section Datatype: "array"
+**Decision**: UI section nodes use `datatype: "array"` instead of creating a new `"section"` datatype
+
+**Rationale**:
+- UI sections conceptually function as containers holding multiple components
+- Similar to how arrays hold multiple elements
+- Avoids unnecessary complexity in the type system
+- Leverages existing type definition
+- While `"section"` might seem semantically clearer, it adds little practical value
+
+**Trade-off**: Semantic clarity vs. type system simplicity. We chose simplicity.
+
+#### 3.3.4 Function Categorization: "middleware"
+**Decision**: All functions (business logic, handlers, validators) are categorized as `"middleware"`
+
+**Rationale**:
+- Functions represent the processing layer between UI and API
+- Aligns with the event flow principle
+- Clear distinction from UI components (`"front-end"`) and API endpoints (`"api"`)
+
+**Event Flow**:
+```
+Button → handleClick() → validateInput() → callAPI() → /api/users → users_table
+[front-end] [middleware]   [middleware]      [middleware]   [api]     [database]
+```
+
+#### 3.3.5 Four-Tier Architecture
+**Decision**: Implement 4-tier layout instead of original 3-tier
+
+**Layout Tiers** (left to right):
+1. **Front-End** (leftmost): UI sections, components, buttons, forms
+2. **Middleware** (center-left): Functions, handlers, business logic, validators
+3. **API** (center-right): API endpoints, routes
+4. **Database** (rightmost): Tables, views
+
+**Rationale**: 
+- Matches the actual event flow in full-stack applications
+- Provides better visual separation of architectural layers
+- Enables clearer tracing of user actions through the system
+
 ---
 
 ## 4. Implementation Plan
@@ -125,19 +216,33 @@ For major UI sections (visible tabs like Home, Manage, Admin, etc.; and menu ite
 #### 1.1 Update Type Definitions
 - Add `nodeType: "ui-section"` to NodeType union
 - Add `relationship: "displays"` to RelationshipType union
+- Add `nodeCategory: "api"` to NodeCategory union (new layer for API endpoints)
 - Add `sectionType` to node properties interface
+
+**Type Updates**:
+```typescript
+type NodeType = "function" | "API" | "table" | "view" | "route" | "external-dependency" | "ui-section" | string;
+type NodeCategory = "front-end" | "api" | "middleware" | "database" | "library";
+type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains" | "displays";
+```
 
 **Files**: `src/types/index.ts`
 
 #### 1.2 Fix Node Categorization
 **Problem**: Current analyzer marks all nodes as `nodeCategory: "front-end"`
 
-**Solution**: Properly categorize nodes:
-- UI components/elements → `"front-end"`
-- API endpoints → `"api"`
-- services, middleware → `"middleware"`
-- Database tables, views, queries → `"database"`
-- External libraries → `"library"`
+**Solution**: Properly categorize nodes following event flow sequence:
+- UI components/elements/sections → `"front-end"` (leftmost - where user interaction starts)
+- Functions (business logic, handlers) → `"middleware"` (center-left - processing layer)
+- API endpoints → `"api"` (center-right - API layer)
+- Database tables, views, queries → `"database"` (rightmost - data persistence layer)
+- External libraries → `"library"` (infrastructure - positioned based on usage context)
+
+**Event Flow Principle**: Categories follow the sequence of events triggered in code:
+```
+User clicks button → function called → function called → ... → API called → database query → tables
+    [front-end]         [middleware]     [middleware]         [api]          [database]     [database]
+```
 
 **Files**: 
 - `src/analyzers/ast-parser.ts`
@@ -349,7 +454,7 @@ function createSectionNodes(routes: RouteInfo[]): NodeInfo[] {
     label: route.label || route.component,
     nodeType: "ui-section",
     nodeCategory: "front-end",
-    datatype: "section",
+    datatype: "array", // UI sections are containers, like arrays holding components
     liveCodeScore: 100,
     file: route.file,
     line: route.line,
@@ -740,4 +845,5 @@ if (layoutName === 'dagre') {
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | Oct 28, 2025 | AI Assistant | Initial draft |
+| 1.1 | Oct 28, 2025 | AI Assistant & User | Clarifications and design decisions:<br>- Changed to "front-end" (hyphenated) naming<br>- Added "api" as new nodeCategory<br>- Clarified "displays" vs "contains" semantics<br>- Added "ui-section" nodeType<br>- UI sections use datatype: "array"<br>- Functions categorized as "middleware"<br>- Defined 4-tier architecture<br>- Added Design Decisions section (3.3) |
 
