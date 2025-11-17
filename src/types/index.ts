@@ -259,21 +259,43 @@ export interface InformativeElementInfo {
 
 /**
  * AST Parser interface
- * Defines the contract for AST parsing functionality
+ * Defines the contract for general AST parsing functionality
+ * NOTE: React-specific methods moved to ReactAnalyzer (Architectural Refactoring)
  */
 export interface ASTParser {
   parseFile(filePath: string): Promise<ASTNode>;
   extractImports(ast: ASTNode): ImportInfo[];
   extractExports(ast: ASTNode): ExportInfo[];
+  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
+}
+
+/**
+ * React Analyzer interface
+ * Defines the contract for React-specific analysis functionality
+ *
+ * Architectural Separation:
+ * - Separates React-specific logic from general AST parsing
+ * - Follows Single Responsibility Principle
+ * - Makes React analysis testable and maintainable independently
+ *
+ * Responsibilities:
+ * - Analyze React components (functional, class, hooks)
+ * - Extract JSX elements and their properties
+ * - Detect informative elements (display, input, data sources, state)
+ * - Extract event handlers with detailed analysis
+ * - Track component relationships and parent-child connections
+ */
+export interface ReactAnalyzer {
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[];
   extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[];
-  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
   isInformativeElement(node: ASTNode): boolean;
   detectDisplayElements(ast: ASTNode): InformativeElementInfo[];
   detectInputElements(ast: ASTNode): InformativeElementInfo[];
   detectDataSources(ast: ASTNode): InformativeElementInfo[];
   detectStateManagement(ast: ASTNode): InformativeElementInfo[];
+  extractEventHandlers(jsxElement: ASTNode): EventHandler[];
+  extractFunctionCallsFromHandler(handler: ASTNode): string[];
 }
 
 /**
