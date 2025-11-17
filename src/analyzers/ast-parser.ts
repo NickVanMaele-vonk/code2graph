@@ -2,6 +2,11 @@
  * AST Parser
  * Handles parsing of TypeScript/JavaScript files using @babel/parser
  * Following Phase 3.3 requirements from the architecture document
+ *
+ * ARCHITECTURAL REFACTORING:
+ * - General AST parsing logic remains here (imports, exports, file parsing)
+ * - React-specific logic delegated to ReactAnalyzer (components, JSX, hooks, state)
+ * - Follows Single Responsibility Principle for better maintainability
  */
 
 import { parse, ParserOptions } from '@babel/parser';
@@ -29,21 +34,24 @@ import {
   EventHandler // ADDED (Phase A): For structured event handler objects
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
+import { ReactAnalyzerImpl } from './react-analyzer.js';
 
 /**
  * AST Parser class
- * Implements TypeScript/JavaScript file parsing and AST analysis
- * Extracts imports, exports, JSX elements, and informative elements
+ * Implements TypeScript/JavaScript file parsing and general AST analysis
+ * Delegates React-specific analysis to ReactAnalyzer
  */
 export class ASTParserImpl {
   private logger?: AnalysisLogger;
+  private reactAnalyzer: ReactAnalyzerImpl;
 
   /**
-   * Constructor initializes the AST parser
+   * Constructor initializes the AST parser and React analyzer
    * @param logger - Optional analysis logger for error reporting
    */
   constructor(logger?: AnalysisLogger) {
     this.logger = logger;
+    this.reactAnalyzer = new ReactAnalyzerImpl(logger);
   }
 
   /**
@@ -250,12 +258,20 @@ export class ASTParserImpl {
 
   /**
    * Extracts JSX elements from AST
-   * Identifies all JSX elements and their properties
-   * 
+   * Delegates to ReactAnalyzer for React-specific analysis
+   *
    * @param ast - The AST to analyze
    * @returns JSXElementInfo[] - Array of JSX element information
    */
   extractJSXElements(ast: ASTNode): JSXElementInfo[] {
+    return this.reactAnalyzer.extractJSXElements(ast);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   * Use ReactAnalyzer directly for new code
+   */
+  private extractJSXElements_legacy(ast: ASTNode): JSXElementInfo[] {
     const jsxElements: JSXElementInfo[] = [];
 
     const visitor: Visitor = {
@@ -286,14 +302,20 @@ export class ASTParserImpl {
 
   /**
    * Extracts informative elements from AST
-   * Identifies elements that exchange internal data with users
-   * UPDATED (Phase B): Now tracks parent component context during traversal
-   * 
+   * Delegates to ReactAnalyzer for React-specific analysis
+   *
    * @param ast - The AST to analyze
    * @param filePath - Path to the file being analyzed
    * @returns InformativeElementInfo[] - Array of informative element information
    */
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[] {
+    return this.reactAnalyzer.extractInformativeElements(ast, filePath);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private extractInformativeElements_legacy(ast: ASTNode, filePath: string): InformativeElementInfo[] {
     const informativeElements: InformativeElementInfo[] = [];
     let currentComponentName: string | undefined;
     const componentStack: string[] = []; // Track nested components
@@ -430,22 +452,20 @@ export class ASTParserImpl {
 
   /**
    * Extracts component definitions from AST
-   * Phase 1 Implementation: Identifies individual React components within files
-   * 
-   * Business Logic:
-   * - Detects functional components (function declarations, arrow functions, function expressions)
-   * - Detects class components (classes extending React.Component or Component)
-   * - Component names must start with uppercase letter (React naming convention)
-   * - Tracks whether component is exported
-   * 
-   * This enables component-level granularity instead of file-level granularity,
-   * allowing accurate component-to-component dependency tracking.
-   * 
+   * Delegates to ReactAnalyzer for React-specific analysis
+   *
    * @param ast - The AST to analyze
    * @param filePath - Path to the file being analyzed
    * @returns ComponentDefinitionInfo[] - Array of component definitions found
    */
   extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[] {
+    return this.reactAnalyzer.extractComponentDefinitions(ast, filePath);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private extractComponentDefinitions_legacy(ast: ASTNode, filePath: string): ComponentDefinitionInfo[] {
     const components: ComponentDefinitionInfo[] = [];
     
     // Phase B: Only process React files
@@ -616,7 +636,18 @@ export class ASTParserImpl {
    * @param node - The AST node to check
    * @returns boolean - True if the node is informative
    */
+  /**
+   * Checks if a node is an informative element
+   * Delegates to ReactAnalyzer for React-specific analysis
+   */
   isInformativeElement(node: ASTNode): boolean {
+    return this.reactAnalyzer.isInformativeElement(node);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private isInformativeElement_legacy(node: ASTNode): boolean {
     const babelNode = node as unknown as t.Node;
     
     // Check for JSX elements with event handlers or data binding
@@ -644,7 +675,18 @@ export class ASTParserImpl {
    * @param ast - The AST to analyze
    * @returns InformativeElementInfo[] - Array of display elements
    */
+  /**
+   * Detects display elements from AST
+   * Delegates to ReactAnalyzer for React-specific analysis
+   */
   detectDisplayElements(ast: ASTNode): InformativeElementInfo[] {
+    return this.reactAnalyzer.detectDisplayElements(ast);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private detectDisplayElements_legacy(ast: ASTNode): InformativeElementInfo[] {
     const displayElements: InformativeElementInfo[] = [];
 
     const visitor: Visitor = {
@@ -678,7 +720,18 @@ export class ASTParserImpl {
    * @param ast - The AST to analyze
    * @returns InformativeElementInfo[] - Array of input elements
    */
+  /**
+   * Detects input elements from AST
+   * Delegates to ReactAnalyzer for React-specific analysis
+   */
   detectInputElements(ast: ASTNode): InformativeElementInfo[] {
+    return this.reactAnalyzer.detectInputElements(ast);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private detectInputElements_legacy(ast: ASTNode): InformativeElementInfo[] {
     const inputElements: InformativeElementInfo[] = [];
 
     const visitor: Visitor = {
@@ -712,7 +765,18 @@ export class ASTParserImpl {
    * @param ast - The AST to analyze
    * @returns InformativeElementInfo[] - Array of data source elements
    */
+  /**
+   * Detects data sources from AST (API calls, fetch operations)
+   * Delegates to ReactAnalyzer for React-specific analysis
+   */
   detectDataSources(ast: ASTNode): InformativeElementInfo[] {
+    return this.reactAnalyzer.detectDataSources(ast);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private detectDataSources_legacy(ast: ASTNode): InformativeElementInfo[] {
     const dataSources: InformativeElementInfo[] = [];
 
     const visitor: Visitor = {
@@ -746,7 +810,18 @@ export class ASTParserImpl {
    * @param ast - The AST to analyze
    * @returns InformativeElementInfo[] - Array of state management elements
    */
+  /**
+   * Detects state management from AST (useState, useReducer, etc.)
+   * Delegates to ReactAnalyzer for React-specific analysis
+   */
   detectStateManagement(ast: ASTNode): InformativeElementInfo[] {
+    return this.reactAnalyzer.detectStateManagement(ast);
+  }
+
+  /**
+   * @deprecated Legacy method for backward compatibility
+   */
+  private detectStateManagement_legacy(ast: ASTNode): InformativeElementInfo[] {
     const stateElements: InformativeElementInfo[] = [];
 
     const visitor: Visitor = {
