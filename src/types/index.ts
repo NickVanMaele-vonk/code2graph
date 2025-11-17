@@ -459,31 +459,6 @@ export interface HookInfo {
 }
 
 /**
- * Informative element interface
- * Elements that exchange internal data with users
- * 
- * @deprecated Use InformativeElementInfo instead (Phase G)
- * 
- * This interface is DEPRECATED and kept only for backward compatibility.
- * It lacks critical properties (file, elementType) and uses incorrect dataBindings type (DataBinding[] vs string[]).
- * 
- * Use InformativeElementInfo which:
- * - Includes file property (required for edge creation)
- * - Includes elementType property (required for node categorization)
- * - Uses string[] for dataBindings (correct format from AST parser)
- * - Aligns with ComponentInfo.informativeElements type
- */
-export interface InformativeElement {
-  type: ElementType;
-  name: string;
-  props: Record<string, unknown>;
-  eventHandlers: EventHandler[];
-  dataBindings: DataBinding[];
-  line?: number;
-  column?: number;
-}
-
-/**
  * Element type definitions
  */
 export type ElementType = "display" | "input" | "data-source" | "state-management";
@@ -497,15 +472,6 @@ export interface EventHandler {
   name: string;        // Event name: "onClick", "onChange", "onSubmit"
   type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
   handler: string;     // Function(s) called: "handleClick" or "validateInput, callAPI" for multiple calls
-}
-
-/**
- * Data binding interface
- */
-export interface DataBinding {
-  source: string;
-  target: string;
-  type: string;
 }
 
 /**
