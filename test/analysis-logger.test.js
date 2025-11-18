@@ -15,14 +15,27 @@ describe('AnalysisLogger', () => {
   let testRepoUrl;
 
   beforeEach(async () => {
-    testRepoUrl = 'https://github.com/testuser/testrepo';
-    logger = new AnalysisLogger(testRepoUrl);
-    
-    // Root cause fix: Ensure log directory exists before each test
+    // Use a unique repository URL for each test to avoid log file conflicts
+    // across different test suites that might run in parallel
+    testRepoUrl = `https://github.com/testuser/testrepo-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // Create a temporary logger just to get the log path for cleanup
+    const tempLogger = new AnalysisLogger(testRepoUrl);
+    const logPath = tempLogger.getLogPath();
+    const logDir = path.dirname(logPath);
+
+    // Ensure log directory exists before each test
     // This prevents race conditions where afterEach cleanup from previous test
     // might still be running when this test starts
-    const logDir = path.dirname(logger.getLogPath());
     await fs.ensureDir(logDir);
+
+    // Remove any existing log file to ensure clean state
+    if (await fs.pathExists(logPath)) {
+      await fs.remove(logPath);
+    }
+
+    // Now create the logger for the test
+    logger = new AnalysisLogger(testRepoUrl);
   });
 
   afterEach(async () => {
@@ -36,7 +49,8 @@ describe('AnalysisLogger', () => {
   describe('Log File Creation', () => {
     test('should create log file with correct name', () => {
       const logPath = logger.getLogPath();
-      assert(logPath.includes('testrepo-analysis.log'));
+      assert(logPath.includes('testrepo-'));
+      assert(logPath.includes('-analysis.log'));
       assert(logPath.includes('log'));
     });
 
@@ -193,19 +207,20 @@ describe('AnalysisLogger', () => {
         total: 2048000,
         percentage: 50
       };
-      
+
       await logger.logMemoryUsage(memoryInfo);
-      
-      // Phase G: Add small delay to ensure file write completes on Windows
+
+      // Phase G: Add delay to ensure file write completes on Windows
       // Windows file system can have timing issues with immediate read after write
       // using appendFile (EPERM errors when file handle not yet released)
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
+      // Increased delay for full test suite execution where timing is more critical
+      await new Promise(resolve => setTimeout(resolve, 250));
+
       const logPath = logger.getLogPath();
       assert(await fs.pathExists(logPath));
-      
+
       const logContent = await fsBuiltin.readFile(logPath, 'utf-8');
-      assert(logContent.includes('Memory usage'));
+      assert(logContent.includes('Memory usage'), `Expected log to contain 'Memory usage'. Actual content: ${logContent}`);
       assert(logContent.includes('1024000'));
     });
 
