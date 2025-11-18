@@ -100,7 +100,7 @@ export function TestComponent() {
   return (
     <div>
       <button onClick={handleClick} aria-label="Save">Save</button>
-      <div onClick={handleClick}>Click me</div>
+      <div onClick={handleClick}></div>
       <button onClick={handleClick}>Submit</button>
     </div>
   );
@@ -118,7 +118,7 @@ export function TestComponent() {
       const withoutSemanticID = informativeElements.filter(el => el.hasSemanticIdentifier === false);
 
       assert.ok(withSemanticID.length >= 2, 'Should have at least 2 elements with semantic IDs (aria-label and text content)');
-      assert.ok(withoutSemanticID.length >= 1, 'Should have at least 1 element without semantic ID (plain div)');
+      assert.ok(withoutSemanticID.length >= 1, 'Should have at least 1 element without semantic ID (empty div)');
 
       console.log('\n✅ Semantic filtering verified');
       console.log(`   With semantic IDs: ${withSemanticID.length}`);

@@ -604,6 +604,17 @@ export class ReactAnalyzerImpl implements ReactAnalyzer {
   }
 
   private extractTextContent(node: t.JSXElement): string | undefined {
+    // Only extract text content if there are no other JSX element children
+    // This avoids extracting fragmented text from mixed content like <div><span>Day</span> 12</div>
+    const hasJSXElementChildren = node.children.some(child =>
+      t.isJSXElement(child) || t.isJSXFragment(child)
+    );
+
+    if (hasJSXElementChildren) {
+      return undefined;
+    }
+
+    // Extract text content only if it's the sole content
     for (const child of node.children) {
       if (t.isJSXText(child)) {
         const text = child.value.trim();
@@ -634,6 +645,8 @@ export class ReactAnalyzerImpl implements ReactAnalyzer {
 
     if (t.isIdentifier(value.expression)) {
       return 'function-reference';
+    } else if (t.isMemberExpression(value.expression)) {
+      return 'method-reference';
     } else if (t.isArrowFunctionExpression(value.expression)) {
       return 'arrow-function';
     } else if (t.isFunctionExpression(value.expression)) {
@@ -652,6 +665,11 @@ export class ReactAnalyzerImpl implements ReactAnalyzer {
 
     if (t.isIdentifier(value.expression)) {
       functionNames.push(value.expression.name);
+    } else if (t.isMemberExpression(value.expression)) {
+      // Handle this.method or obj.method
+      if (t.isIdentifier(value.expression.property)) {
+        functionNames.push(value.expression.property.name);
+      }
     } else if (t.isArrowFunctionExpression(value.expression) ||
                t.isFunctionExpression(value.expression)) {
       this.findCallExpressionsInNode(value.expression.body, functionNames);
@@ -669,6 +687,12 @@ export class ReactAnalyzerImpl implements ReactAnalyzer {
       } else if (t.isMemberExpression(node.callee) && t.isIdentifier(node.callee.property)) {
         functionNames.push(node.callee.property.name);
       }
+      // Recursively process arguments (for nested calls like toast({ title: handleSuccess() }))
+      node.arguments.forEach(arg => {
+        if (t.isExpression(arg)) {
+          this.findCallExpressionsInNode(arg as t.Node, functionNames);
+        }
+      });
     }
 
     if (t.isBlockStatement(node)) {
@@ -677,6 +701,16 @@ export class ReactAnalyzerImpl implements ReactAnalyzer {
       this.findCallExpressionsInNode(node.expression, functionNames);
     } else if (t.isSequenceExpression(node)) {
       node.expressions.forEach(expr => this.findCallExpressionsInNode(expr, functionNames));
+    } else if (t.isAwaitExpression(node)) {
+      // Handle async/await: await apiRequest()
+      this.findCallExpressionsInNode(node.argument, functionNames);
+    } else if (t.isObjectExpression(node)) {
+      // Handle object literals in arguments: { title: handleSuccess() }
+      node.properties.forEach(prop => {
+        if (t.isObjectProperty(prop) && t.isExpression(prop.value)) {
+          this.findCallExpressionsInNode(prop.value as t.Node, functionNames);
+        }
+      });
     }
   }
 
