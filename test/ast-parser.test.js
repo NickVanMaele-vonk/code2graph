@@ -211,11 +211,15 @@ describe('AST Parser', () => {
       const jsxElements = parser.extractJSXElements(ast);
 
       assert.ok(jsxElements.length > 0);
-      
+
       const divElement = jsxElements.find(el => el.name === 'div');
       assert.ok(divElement);
       assert.strictEqual(divElement.type, 'element');
-      assert.ok(divElement.hasEventHandlers || divElement.hasDataBinding);
+
+      // Check button element which actually has an event handler
+      const buttonElement = jsxElements.find(el => el.name === 'button');
+      assert.ok(buttonElement);
+      assert.strictEqual(buttonElement.hasEventHandlers, true);
     });
 
     it('should detect event handlers in JSX elements', async () => {
