@@ -20,7 +20,8 @@ export default defineConfig([
       globals: {
         ...globals.browser, 
         ...globals.node,
-        cytoscape: 'readonly' // CDN-loaded library in visualizer/index.html
+        cytoscape: 'readonly', // CDN-loaded library in visualizer/index.html
+        cytoscapeDagre: 'readonly' // Change Request 002 - Phase 5: CDN-loaded dagre extension
       } 
     } 
   },

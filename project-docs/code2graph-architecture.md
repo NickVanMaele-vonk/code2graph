@@ -2,10 +2,11 @@
 ## Code2Graph - Code Dependency Visualization Tool
 
 ### Document Information
-- **Version**: 1.1
-- **Date**: 2025-10-06
+- **Version**: 1.2
+- **Date**: 2025-10-28
 - **Author**: Nick Van Maele
 - **Project**: code2graph
+- **Last Updated**: Aligned with Change Request 002 (4-tier architecture, "displays" relationship)
 
 ---
 
@@ -456,10 +457,17 @@ interface EdgeInfo {
 
 // Type Definitions
 type DataType = "array" | "list" | "integer" | "table" | "view" | string;
-type NodeType =  "function" | "API" | "table" | "view" | "route" | "external-dependency" | string;
-type NodeCategory = "front end" | "middleware" | "database" | "library";
+type NodeType =  "function" | "API" | "table" | "view" | "route" | "external-dependency" | "ui-section" | string;
+type NodeCategory = "front-end" | "api" | "middleware" | "database" | "library";
 type CodeOwnership = "internal" | "external"; // Enables filtering: internal = custom code, external = standard libraries
-type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains";
+type RelationshipType = "imports" | "calls" | "uses" | "reads" | "writes to" | "renders" | "contains" | "displays";
+
+// Category Definitions (4-tier architecture following event flow):
+// "front-end": UI sections, components, buttons, forms (leftmost - where user interaction starts)
+// "api": API endpoints, routes (center-right - API layer)
+// "middleware": Business logic functions, handlers, validators (center-left - processing layer)
+// "database": Database tables, views, queries (rightmost - data persistence layer)
+// "library": External dependencies (positioned based on usage context)
 
 ```
 
@@ -846,39 +854,56 @@ interface ComponentInfo {
 
 ### 11.4 Edge Direction Philosophy
 
-**Principle**: All edges follow **UI → Database flow** for intuitive dependency tracing.
+**Principle**: All edges follow **UI → Database flow** for intuitive dependency tracing, matching the sequence of events triggered in code.
 
-**Edge Patterns**:
+**Edge Patterns (4-tier architecture)**:
 ```
-User Interface Layer:
+Front-End Layer (leftmost):
+  UI Section --[displays]--> Component (section membership)
   Component --[contains]--> JSX Element (structural)
   Component --[renders]--> Component (usage)
   
 Dependency Layer:
   Component --[imports]--> External Package (needs)
   
-API Layer:
-  Component --[calls]--> API Endpoint (invokes)
+Middleware Layer (center-left):
+  Component --[calls]--> Function (business logic)
+  Function --[calls]--> Function (processing chain)
   
-Data Layer:
+API Layer (center-right):
+  Function --[calls]--> API Endpoint (invokes)
+  
+Data Layer (rightmost):
   API --[reads/writes to]--> Database Table (data access)
+```
+
+**Event Flow Example**:
+```
+User clicks button → handleClick() → validateInput() → callAPI() → /api/users → users_table
+  [front-end]        [middleware]     [middleware]      [middleware]   [api]      [database]
 ```
 
 **Rationale**: Enables questions like:
 - "What does MainComponent depend on?" (follow outgoing edges)
 - "What breaks if Hello is removed?" (trace incoming edges)
-- "How does user action reach database?" (traverse UI → Database)
+- "How does user action reach database?" (traverse UI → Database following event flow)
 
 ### 11.5 Relationship Types
 
 | Relationship | Source → Target | Semantics | Example |
 |--------------|-----------------|-----------|---------|
+| `displays` | UI Section → Component | Section-level membership | `[Manage Tab] --[displays]--> ClubMembersButton` |
 | `contains` | Component → JSX Element | Structural parent-child | `MainComponent --[contains]--> <button>` |
 | `renders` | Component → Component | Component usage | `MainComponent --[renders]--> Hello` |
 | `imports` | Component → Package | Dependency on external library | `Hello --[imports]--> react` |
 | `calls` | Component → API | API invocation | `MainComponent --[calls]--> /api/users` |
 | `reads` | API → Table | Data read operation | `/api/users --[reads]--> users_table` |
 | `writes to` | API → Table | Data write operation | `/api/users --[writes to]--> users_table` |
+
+**Semantic Distinction: "displays" vs "contains"**
+- **"displays"**: Section-level UI organization (e.g., "This tab shows this button to the user")
+- **"contains"**: Component internal structure (e.g., "This form structurally owns this field")
+- **Key principle**: A tab displays a button, a form contains a field
 
 ### 11.6 Filtering and Visualization
 
@@ -897,6 +922,32 @@ nodes.filter(n => n.isInfrastructure === true)
 // Show everything (default)
 nodes // No filter
 ```
+
+---
+
+## 12. Change Log
+
+### Version 1.2 (October 28, 2025)
+**Aligned with Change Request 002: Hierarchical Layout with UI Section Grouping**
+
+**Type System Updates**:
+- Changed `"front end"` to `"front-end"` (hyphenated) throughout
+- Added `"api"` as new NodeCategory for API endpoints
+- Added `"ui-section"` as new NodeType for UI sections/tabs
+- Added `"displays"` as new RelationshipType for section-to-component relationships
+
+**Architecture Updates**:
+- Evolved from 3-tier to **4-tier architecture** (front-end → middleware → api → database)
+- Documented event flow principle: categories follow the sequence of events triggered in code
+- Clarified semantic distinction between "displays" (section membership) and "contains" (internal structure)
+- Updated edge direction philosophy to reflect 4-tier flow
+
+**Category Definitions**:
+- **"front-end"**: UI sections, components, buttons, forms (leftmost - user interaction)
+- **"middleware"**: Business logic functions, handlers, validators (center-left - processing)
+- **"api"**: API endpoints and routes (center-right - API layer)
+- **"database"**: Tables, views, queries (rightmost - data persistence)
+- **"library"**: External dependencies (positioned by usage)
 
 ---
 

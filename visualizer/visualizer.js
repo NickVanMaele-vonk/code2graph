@@ -3,7 +3,24 @@
  * Transforms code2graph JSON output into interactive graph visualization
  */
 
+// Change Request 002 - Phase 5: Register Dagre Extension
+// Context: Enables hierarchical left-to-right layout for UI sections
+// Business Logic: Dagre algorithm positions nodes by category (front-end, middleware, api, database)
+if (typeof cytoscape !== 'undefined' && typeof cytoscapeDagre !== 'undefined') {
+    cytoscape.use(cytoscapeDagre);
+}
+
 let cy;
+
+/**
+ * Global state management for node focus functionality
+ * Tracks whether focus mode is active and which node is currently focused
+ * Business Logic: Enables toggling between normal view and focused view of node connections
+ */
+let focusState = {
+    isActive: false,
+    focusedNodeId: null
+};
 
 /**
  * Initialize Cytoscape.js with empty graph
@@ -58,6 +75,24 @@ function initializeCytoscape() {
                     'shape': 'diamond'
                 }
             },
+            // Change Request 002 - Phase 5: UI Section Node Styling
+            // Context: UI sections are first-level nodes representing screens/tabs/pages
+            // Business Logic: Leftmost nodes in hierarchical layout, larger size to emphasize hierarchy
+            {
+                selector: 'node[type = "ui-section"]',
+                style: {
+                    'background-color': '#2196F3',
+                    'shape': 'roundrectangle',
+                    'width': 60,
+                    'height': 40,
+                    'font-size': '12px',
+                    'font-weight': 'bold',
+                    'text-valign': 'center',
+                    'text-halign': 'center',
+                    'color': '#ffffff',
+                    'text-background-opacity': 0
+                }
+            },
             {
                 selector: 'edge',
                 style: {
@@ -67,6 +102,78 @@ function initializeCytoscape() {
                     'target-arrow-shape': 'vee',
                     'arrow-scale': 0.5,
                     'curve-style': 'bezier'
+                }
+            },
+            // Change Request 002 - Phase 5: Displays Edge Styling
+            // Context: "displays" relationships connect UI sections to their components
+            // Business Logic: Distinct visual from other edges to show section-component membership
+            {
+                selector: 'edge[relationship = "displays"]',
+                style: {
+                    'width': 2,
+                    'line-color': '#2196F3',
+                    'target-arrow-color': '#2196F3',
+                    'target-arrow-shape': 'triangle',
+                    'arrow-scale': 1.2,
+                    'curve-style': 'bezier',
+                    'line-style': 'solid'
+                }
+            },
+            // Focus Mode Styles - Enhanced Node Click Functionality
+            // These styles are applied when users click nodes to focus on their connections
+            {
+                selector: '.node-focused',
+                style: {
+                    'border-width': 4,
+                    'border-color': '#ff6b35',
+                    'background-color': '#fff3e0',
+                    'box-shadow': '0 0 15px rgba(255, 107, 53, 0.4)'
+                }
+            },
+            {
+                selector: '.node-connected',
+                style: {
+                    'border-width': 3,
+                    'border-color': '#4caf50',
+                    'background-color': '#e8f5e8',
+                    'box-shadow': '0 0 10px rgba(76, 175, 80, 0.3)'
+                }
+            },
+            {
+                selector: '.node-dimmed',
+                style: {
+                    'opacity': 0.3,
+                    'background-color': '#f5f5f5',
+                    'border-color': '#e0e0e0'
+                }
+            },
+            {
+                selector: '.edge-focused',
+                style: {
+                    'width': 3,
+                    'line-color': '#ff6b35',
+                    'target-arrow-color': '#ff6b35',
+                    'opacity': 1
+                }
+            },
+            {
+                selector: '.edge-dimmed',
+                style: {
+                    'opacity': 0.2,
+                    'line-color': '#d0d0d0',
+                    'target-arrow-color': '#d0d0d0'
+                }
+            },
+            // Search Highlight Style
+            // Applied when user searches for nodes by label
+            {
+                selector: '.search-highlight',
+                style: {
+                    'background-color': '#FFEB3B',
+                    'border-width': 3,
+                    'border-color': '#FBC02D',
+                    'border-style': 'solid',
+                    'z-index': 9999
                 }
             }
         ],
@@ -205,6 +312,26 @@ function calculateAndStoreBaseSize(node) {
 }
 
 /**
+ * Get dagre rank (column position) based on node category
+ * Change Request 002 - Phase 5 Bug Fix: Assign explicit ranks to nodes
+ * Context: Dagre reads rank from node data, not from layout options
+ * Business Logic: Maps node categories to column positions (0=leftmost, 3=rightmost)
+ * 
+ * @param {string} category - Node category (front-end, middleware, api, database)
+ * @returns {number} - Rank number (0-3) for hierarchical positioning
+ */
+function getCategoryRank(category) {
+    const categoryRank = {
+        'front-end': 0,    // Column 0 (leftmost) - UI elements start here
+        'middleware': 1,   // Column 1 - Business logic and handlers
+        'api': 2,          // Column 2 - API endpoints
+        'database': 3,     // Column 3 (rightmost) - Data persistence layer
+        'library': 1       // External libraries positioned with middleware
+    };
+    return categoryRank[category] !== undefined ? categoryRank[category] : 1;
+}
+
+/**
  * Transform code2graph JSON to Cytoscape.js format
  * @param {Object} data - code2graph JSON data
  * @returns {Object} - Cytoscape.js elements
@@ -224,6 +351,8 @@ function transformData(data) {
                     label: node.label || node.id,
                     type: node.nodeType,
                     category: node.nodeCategory,
+                    nodeCategory: node.nodeCategory,  // Change Request 002 - Phase 5: Keep original for dagre layout
+                    rank: getCategoryRank(node.nodeCategory), // Change Request 002 - Phase 5: Explicit rank for dagre
                     liveCodeScore: node.liveCodeScore,
                     // Include all original properties for tooltip
                     ...node
@@ -271,12 +400,11 @@ function loadGraph(data) {
         calculateAndStoreBaseSize(node);
     });
     
-    // Apply layout
-    cy.layout({
-        name: 'cose',
-        fit: true,
-        padding: 30
-    }).run();
+    // Change Request 002 - Phase 5: Use currently selected layout on load
+    // Context: Respect user's layout preference when loading new graph data
+    // Business Logic: Trigger layout change event to apply correct layout algorithm
+    const changeEvent = new Event('change');
+    document.getElementById('layoutSelect').dispatchEvent(changeEvent);
     
     // Update stats
     updateStats(data);
@@ -357,6 +485,7 @@ function setupNodeInteractions() {
     });
     
     // Phase 2: Show detailed information in side panel on click
+    // Enhanced with focus mode toggle functionality
     cy.on('tap', 'node', function(evt) {
         const node = evt.target;
         const nodeData = node.data();
@@ -368,7 +497,25 @@ function setupNodeInteractions() {
         const detailsHTML = createDetailedNodeInfo(nodeData);
         detailsPanel.innerHTML = detailsHTML;
         
-        // Highlight the selected node
+        // Handle focus mode toggle
+        if (focusState.isActive && focusState.focusedNodeId === node.id()) {
+            // Second click on same node: clear focus state
+            clearFocusState();
+        } else {
+            // First click or click on different node: apply focus state
+            const upstreamNodes = getUpstreamNodes(node);
+            const downstreamNodes = getDownstreamNodes(node);
+            const connectedEdges = getConnectedEdges(node, upstreamNodes, downstreamNodes);
+            
+            // Apply focus state styling
+            applyFocusState(node, upstreamNodes, downstreamNodes, connectedEdges);
+            
+            // Update focus state
+            focusState.isActive = true;
+            focusState.focusedNodeId = node.id();
+        }
+        
+        // Highlight the selected node (maintain existing functionality)
         cy.nodes().removeClass('node-selected');
         node.addClass('node-selected');
     });
@@ -378,6 +525,8 @@ function setupNodeInteractions() {
         if (evt.target === cy) {
             cy.nodes().removeClass('node-selected');
             detailsPanel.innerHTML = '<p class="placeholder">Click a node to see details</p>';
+            // Also clear focus state when clicking on background
+            clearFocusState();
         }
     });
 }
@@ -461,6 +610,156 @@ function escapeHtml(text) {
 }
 
 /**
+ * Get all upstream nodes (nodes that have outgoing edges to the target node)
+ * Business Logic: Identifies all nodes that directly or indirectly influence the target node
+ * @param {Object} node - Cytoscape node object
+ * @returns {Array} Array of upstream node objects
+ */
+function getUpstreamNodes(node) {
+    const upstreamNodes = [];
+    const visited = new Set();
+    
+    function traverseUpstream(currentNode) {
+        if (visited.has(currentNode.id())) {
+            return;
+        }
+        visited.add(currentNode.id());
+        
+        // Get all incoming edges (edges pointing TO this node)
+        const incomingEdges = currentNode.incomers('edge');
+        incomingEdges.forEach(edge => {
+            const sourceNode = edge.source();
+            if (!visited.has(sourceNode.id())) {
+                upstreamNodes.push(sourceNode);
+                traverseUpstream(sourceNode);
+            }
+        });
+    }
+    
+    traverseUpstream(node);
+    return upstreamNodes;
+}
+
+/**
+ * Get all downstream nodes (nodes that have incoming edges from the target node)
+ * Business Logic: Identifies all nodes that are directly or indirectly influenced by the target node
+ * @param {Object} node - Cytoscape node object
+ * @returns {Array} Array of downstream node objects
+ */
+function getDownstreamNodes(node) {
+    const downstreamNodes = [];
+    const visited = new Set();
+    
+    function traverseDownstream(currentNode) {
+        if (visited.has(currentNode.id())) {
+            return;
+        }
+        visited.add(currentNode.id());
+        
+        // Get all outgoing edges (edges pointing FROM this node)
+        const outgoingEdges = currentNode.outgoers('edge');
+        outgoingEdges.forEach(edge => {
+            const targetNode = edge.target();
+            if (!visited.has(targetNode.id())) {
+                downstreamNodes.push(targetNode);
+                traverseDownstream(targetNode);
+            }
+        });
+    }
+    
+    traverseDownstream(node);
+    return downstreamNodes;
+}
+
+/**
+ * Get all edges connected to the focused node and its upstream/downstream nodes
+ * Business Logic: Identifies all edges that should be highlighted in focus mode
+ * @param {Object} focusedNode - The main focused node
+ * @param {Array} upstreamNodes - Array of upstream nodes
+ * @param {Array} downstreamNodes - Array of downstream nodes
+ * @returns {Array} Array of connected edge objects
+ */
+function getConnectedEdges(focusedNode, upstreamNodes, downstreamNodes) {
+    const connectedEdges = [];
+    const allConnectedNodes = [focusedNode, ...upstreamNodes, ...downstreamNodes];
+    const nodeIds = new Set(allConnectedNodes.map(node => node.id()));
+    const edgeSet = new Set(); // Track edges already added to prevent duplicates
+    
+    // Find all edges between connected nodes
+    // Context: Each edge appears in multiple nodes' connectedEdges() (once for source, once for target)
+    // Business Logic: Deduplicate edges to avoid showing the same edge multiple times
+    allConnectedNodes.forEach(node => {
+        const edges = node.connectedEdges();
+        edges.forEach(edge => {
+            const sourceId = edge.source().id();
+            const targetId = edge.target().id();
+            
+            // Include edge if both source and target are in connected nodes
+            // AND we haven't already added this edge
+            if (nodeIds.has(sourceId) && nodeIds.has(targetId) && !edgeSet.has(edge)) {
+                connectedEdges.push(edge);
+                edgeSet.add(edge); // Mark edge as added to prevent duplicates
+            }
+        });
+    });
+    
+    return connectedEdges;
+}
+
+/**
+ * Apply focus state styling to nodes and edges
+ * Business Logic: Highlights the focused node, its connections, and dims all other elements
+ * @param {Object} focusedNode - The main focused node
+ * @param {Array} upstreamNodes - Array of upstream nodes
+ * @param {Array} downstreamNodes - Array of downstream nodes
+ * @param {Array} connectedEdges - Array of connected edges
+ */
+function applyFocusState(focusedNode, upstreamNodes, downstreamNodes, connectedEdges) {
+    // Clear any existing focus classes
+    cy.elements().removeClass('node-focused node-connected node-dimmed edge-focused edge-dimmed');
+    
+    // Apply focused styling to the main node
+    focusedNode.addClass('node-focused');
+    
+    // Apply connected styling to upstream and downstream nodes
+    [...upstreamNodes, ...downstreamNodes].forEach(node => {
+        node.addClass('node-connected');
+    });
+    
+    // Apply focused styling to connected edges
+    connectedEdges.forEach(edge => {
+        edge.addClass('edge-focused');
+    });
+    
+    // Apply dimmed styling to all other nodes
+    cy.nodes().forEach(node => {
+        if (!node.hasClass('node-focused') && !node.hasClass('node-connected')) {
+            node.addClass('node-dimmed');
+        }
+    });
+    
+    // Apply dimmed styling to all other edges
+    cy.edges().forEach(edge => {
+        if (!edge.hasClass('edge-focused')) {
+            edge.addClass('edge-dimmed');
+        }
+    });
+}
+
+/**
+ * Clear focus state and return to normal view
+ * Business Logic: Removes all focus-related styling and resets to normal view
+ */
+function clearFocusState() {
+    // Remove all focus-related CSS classes
+    cy.elements().removeClass('node-focused node-connected node-dimmed edge-focused edge-dimmed');
+    
+    // Reset focus state
+    focusState.isActive = false;
+    focusState.focusedNodeId = null;
+}
+
+/**
  * Handle file input change
  */
 document.getElementById('fileInput').addEventListener('change', (event) => {
@@ -522,23 +821,113 @@ document.querySelectorAll('.node-filter').forEach(checkbox => {
  * Handle layout selection
  * Business Logic: Allow users to choose different graph layouts for better visualization
  * Context: Recalculate base sizes after layout changes to ensure proper node sizing
+ * 
+ * Change Request 002 - Phase 5: Hierarchical Dagre Layout
+ * Context: Dagre layout positions nodes left-to-right by category hierarchy
+ * Business Logic: UI sections (leftmost) → middleware → API → database (rightmost)
  */
 document.getElementById('layoutSelect').addEventListener('change', (event) => {
     const layoutName = event.target.value;
     
-    // Apply the new layout
-    const layout = cy.layout({
+    // Configure layout options
+    let layoutOptions = {
         name: layoutName,
         fit: true,
         padding: 30
-    });
+    };
+    
+    // Change Request 002 - Phase 5: Dagre-specific configuration
+    // Context: Hierarchical layout requires rank direction and spacing parameters
+    // Business Logic: Positions nodes based on nodeCategory to show event flow sequence
+    if (layoutName === 'dagre') {
+        // Apply dagre layout only to connected nodes (nodes with edges)
+        // Isolated nodes will be positioned separately in layoutstop callback
+        const connectedNodes = cy.nodes().filter(node => node.degree(false) > 0);
+        
+        if (connectedNodes.length > 0) {
+            // Apply dagre layout only to connected nodes
+            layoutOptions = {
+                ...layoutOptions,
+                eles: connectedNodes,    // Only layout connected nodes
+                rankDir: 'LR',           // Left-to-Right direction
+                nodeSep: 50,             // Horizontal spacing between nodes
+                edgeSep: 10,             // Spacing between edges
+                rankSep: 100,            // Vertical spacing between ranks (categories)
+                ranker: 'network-simplex', // Algorithm for rank assignment
+                
+                // Change Request 002 - Phase 5 Bug Fix: Edge length tuning
+                // Context: Dagre reads rank from node.data('rank'), set in transformData()
+                // Business Logic: Fine-tune edge lengths between ranks for optimal spacing
+                minLen: function(edge) {
+                    const sourceCategory = edge.source().data('nodeCategory');
+                    const targetCategory = edge.target().data('nodeCategory');
+                    
+                    // Define category order for hierarchical positioning
+                    const categoryRank = {
+                        'front-end': 0,
+                        'middleware': 1,
+                        'api': 2,
+                        'database': 3,
+                        'library': 1  // Libraries positioned with middleware
+                    };
+                    
+                    const sourceRank = categoryRank[sourceCategory] || 1;
+                    const targetRank = categoryRank[targetCategory] || 1;
+                    
+                    // Return minimum edge length to enforce rank separation
+                    return Math.max(1, targetRank - sourceRank);
+                }
+            };
+        }
+    }
+    
+    // Apply the layout
+    const layout = cy.layout(layoutOptions);
     
     // Recalculate base sizes after layout completes
     // This ensures nodes maintain zoom-independent sizing after layout changes
     layout.on('layoutstop', function() {
+        // Change Request 002 - Phase 5 Bug Fix: Position isolated nodes at bottom
+        // Context: Isolated nodes disrupt hierarchical layout when positioned in middle
+        // Business Logic: Place disconnected nodes in compact grid below main graph
+        if (layoutName === 'dagre') {
+            const isolatedNodes = cy.nodes().filter(node => node.degree(false) === 0);
+            
+            if (isolatedNodes.length > 0) {
+                // Get bounding box of connected nodes to position isolated nodes below
+                const connectedNodes = cy.nodes().filter(node => node.degree(false) > 0);
+                let maxY = 0;
+                
+                if (connectedNodes.length > 0) {
+                    connectedNodes.forEach(node => {
+                        const pos = node.position();
+                        if (pos.y > maxY) maxY = pos.y;
+                    });
+                }
+                
+                // Position isolated nodes in a compact grid at the bottom
+                const isolatedStartY = maxY + 150; // 150px gap below main graph
+                const gridColumns = Math.ceil(Math.sqrt(isolatedNodes.length));
+                const nodeSpacing = 80;
+                
+                isolatedNodes.forEach((node, index) => {
+                    const col = index % gridColumns;
+                    const row = Math.floor(index / gridColumns);
+                    
+                    node.position({
+                        x: col * nodeSpacing,
+                        y: isolatedStartY + (row * nodeSpacing)
+                    });
+                });
+            }
+        }
+        
         cy.nodes().forEach(function(node) {
             calculateAndStoreBaseSize(node);
         });
+        
+        // Fit the view to show all nodes
+        cy.fit(undefined, 30);
     });
     
     layout.run();

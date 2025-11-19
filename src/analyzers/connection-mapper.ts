@@ -532,15 +532,17 @@ export class ConnectionMapperImpl {
 
     for (const connection of connections) {
       // Find frontend component node
+      // Change Request 002: Updated to use "front-end" (hyphenated)
+      // Context: Frontend components are UI elements in the front-end layer
       const frontendNode = nodes.find(node => 
         node.label === connection.frontendComponent &&
-        node.nodeCategory === 'front end'
+        node.nodeCategory === 'front-end' // CR-002: Changed from "front end"
       );
 
       // Find backend endpoint node
       const backendNode = nodes.find(node => 
         node.label === connection.backendEndpoint &&
-        node.nodeCategory === 'middleware'
+        node.nodeCategory === 'api'
       );
 
       if (frontendNode && backendNode) {

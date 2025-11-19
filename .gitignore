@@ -3,6 +3,7 @@
 cloned-repos/
 graph-data-files/
 temp-analysis/
+log/
 
 # Logs
 logs

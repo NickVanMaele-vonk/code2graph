@@ -97,7 +97,7 @@ describe('Dependency Analyzer', () => {
 
       assert.ok(componentNode);
       assert.strictEqual(componentNode.nodeType, 'function');
-      assert.strictEqual(componentNode.nodeCategory, 'front end');
+      assert.strictEqual(componentNode.nodeCategory, 'front-end');
       assert.strictEqual(componentNode.datatype, 'array');
       assert.strictEqual(componentNode.liveCodeScore, 100);
       assert.strictEqual(componentNode.file, '/src/TestComponent.tsx');
@@ -325,7 +325,7 @@ describe('Dependency Analyzer', () => {
           id: 'node1',
           label: 'Component1',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/Component1.tsx',
@@ -337,7 +337,7 @@ describe('Dependency Analyzer', () => {
           id: 'node2',
           label: 'Component2',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/Component2.tsx',
@@ -357,7 +357,7 @@ describe('Dependency Analyzer', () => {
           id: 'node1',
           label: 'IsolatedComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/IsolatedComponent.tsx',
@@ -379,7 +379,7 @@ describe('Dependency Analyzer', () => {
           id: 'node1',
           label: 'Hello',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Hello.tsx',
@@ -395,7 +395,7 @@ describe('Dependency Analyzer', () => {
           id: 'node2',
           label: 'index',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/index.tsx',
@@ -411,7 +411,7 @@ describe('Dependency Analyzer', () => {
           id: 'node3',
           label: 'Hello',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/index.tsx',
@@ -443,7 +443,7 @@ describe('Dependency Analyzer', () => {
           id: 'node1',
           label: 'MyComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/MyComponent.tsx',
@@ -459,7 +459,7 @@ describe('Dependency Analyzer', () => {
           id: 'node2',
           label: 'button',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/MyComponent.tsx',
@@ -473,7 +473,7 @@ describe('Dependency Analyzer', () => {
           id: 'node3',
           label: 'div',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/MyComponent.tsx',
@@ -498,7 +498,7 @@ describe('Dependency Analyzer', () => {
           id: 'node1',
           label: 'Button',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Button.tsx',
@@ -514,7 +514,7 @@ describe('Dependency Analyzer', () => {
           id: 'node2',
           label: 'Input',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Input.tsx',
@@ -530,7 +530,7 @@ describe('Dependency Analyzer', () => {
           id: 'node3',
           label: 'Form',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Form.tsx',
@@ -546,7 +546,7 @@ describe('Dependency Analyzer', () => {
           id: 'node4',
           label: 'Button',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Form.tsx',
@@ -560,7 +560,7 @@ describe('Dependency Analyzer', () => {
           id: 'node5',
           label: 'Input',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/src/components/Form.tsx',
@@ -597,7 +597,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp1',
           label: 'ParentComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/components.tsx',
@@ -614,7 +614,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp2',
           label: 'ChildComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/components.tsx',
@@ -631,7 +631,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx1',
           label: 'ChildComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/components.tsx',
@@ -658,7 +658,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp1',
           label: 'RecursiveComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -675,7 +675,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx1',
           label: 'RecursiveComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -698,7 +698,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp1',
           label: 'MyComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -714,7 +714,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp2',
           label: 'OtherComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -730,7 +730,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx1',
           label: 'button',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -744,7 +744,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx2',
           label: 'div',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/component.tsx',
@@ -781,7 +781,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp1',
           label: 'ParentComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/multi.tsx',
@@ -797,7 +797,7 @@ describe('Dependency Analyzer', () => {
           id: 'comp2',
           label: 'SiblingComponent',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/multi.tsx',
@@ -813,7 +813,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx1',
           label: 'button',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/multi.tsx',
@@ -827,7 +827,7 @@ describe('Dependency Analyzer', () => {
           id: 'jsx2',
           label: 'input',
           nodeType: 'function',
-          nodeCategory: 'front end',
+          nodeCategory: 'front-end', // Change Request 002: Updated to hyphenated format
           datatype: 'array',
           liveCodeScore: 100,
           file: '/app/multi.tsx',
@@ -1699,9 +1699,9 @@ describe('Dependency Analyzer', () => {
     it('should detect circular dependencies', () => {
       const graph = {
         nodes: [
-          { id: 'node1', label: 'Component1', nodeType: 'function', nodeCategory: 'front end', datatype: 'array', liveCodeScore: 100, file: '/src/Component1.tsx', properties: {} },
-          { id: 'node2', label: 'Component2', nodeType: 'function', nodeCategory: 'front end', datatype: 'array', liveCodeScore: 100, file: '/src/Component2.tsx', properties: {} },
-          { id: 'node3', label: 'Component3', nodeType: 'function', nodeCategory: 'front end', datatype: 'array', liveCodeScore: 100, file: '/src/Component3.tsx', properties: {} }
+          { id: 'node1', label: 'Component1', nodeType: 'function', nodeCategory: 'front-end', datatype: 'array', liveCodeScore: 100, file: '/src/Component1.tsx', properties: {} },
+          { id: 'node2', label: 'Component2', nodeType: 'function', nodeCategory: 'front-end', datatype: 'array', liveCodeScore: 100, file: '/src/Component2.tsx', properties: {} },
+          { id: 'node3', label: 'Component3', nodeType: 'function', nodeCategory: 'front-end', datatype: 'array', liveCodeScore: 100, file: '/src/Component3.tsx', properties: {} }
         ],
         edges: [
           { id: 'edge1', source: 'node1', target: 'node2', relationship: 'imports', properties: {} },
@@ -1732,8 +1732,8 @@ describe('Dependency Analyzer', () => {
     it('should handle graphs with no circular dependencies', () => {
       const graph = {
         nodes: [
-          { id: 'node1', label: 'Component1', nodeType: 'function', nodeCategory: 'front end', datatype: 'array', liveCodeScore: 100, file: '/src/Component1.tsx', properties: {} },
-          { id: 'node2', label: 'Component2', nodeType: 'function', nodeCategory: 'front end', datatype: 'array', liveCodeScore: 100, file: '/src/Component2.tsx', properties: {} }
+          { id: 'node1', label: 'Component1', nodeType: 'function', nodeCategory: 'front-end', datatype: 'array', liveCodeScore: 100, file: '/src/Component1.tsx', properties: {} },
+          { id: 'node2', label: 'Component2', nodeType: 'function', nodeCategory: 'front-end', datatype: 'array', liveCodeScore: 100, file: '/src/Component2.tsx', properties: {} }
         ],
         edges: [
           { id: 'edge1', source: 'node1', target: 'node2', relationship: 'imports', properties: {} }
