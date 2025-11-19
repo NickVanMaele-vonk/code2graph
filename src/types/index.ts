@@ -259,21 +259,43 @@ export interface InformativeElementInfo {
 
 /**
  * AST Parser interface
- * Defines the contract for AST parsing functionality
+ * Defines the contract for general AST parsing functionality
+ * NOTE: React-specific methods moved to ReactAnalyzer (Architectural Refactoring)
  */
 export interface ASTParser {
   parseFile(filePath: string): Promise<ASTNode>;
   extractImports(ast: ASTNode): ImportInfo[];
   extractExports(ast: ASTNode): ExportInfo[];
+  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
+}
+
+/**
+ * React Analyzer interface
+ * Defines the contract for React-specific analysis functionality
+ *
+ * Architectural Separation:
+ * - Separates React-specific logic from general AST parsing
+ * - Follows Single Responsibility Principle
+ * - Makes React analysis testable and maintainable independently
+ *
+ * Responsibilities:
+ * - Analyze React components (functional, class, hooks)
+ * - Extract JSX elements and their properties
+ * - Detect informative elements (display, input, data sources, state)
+ * - Extract event handlers with detailed analysis
+ * - Track component relationships and parent-child connections
+ */
+export interface ReactAnalyzer {
   extractJSXElements(ast: ASTNode): JSXElementInfo[];
   extractInformativeElements(ast: ASTNode, filePath: string): InformativeElementInfo[];
   extractComponentDefinitions(ast: ASTNode, filePath: string): ComponentDefinitionInfo[];
-  findASTNodeTypes(ast: ASTNode, targetTypes: string[]): ASTNode[];
   isInformativeElement(node: ASTNode): boolean;
   detectDisplayElements(ast: ASTNode): InformativeElementInfo[];
   detectInputElements(ast: ASTNode): InformativeElementInfo[];
   detectDataSources(ast: ASTNode): InformativeElementInfo[];
   detectStateManagement(ast: ASTNode): InformativeElementInfo[];
+  extractEventHandlers(jsxElement: ASTNode): EventHandler[];
+  extractFunctionCallsFromHandler(handler: ASTNode): string[];
 }
 
 /**
@@ -507,31 +529,6 @@ export interface HookInfo {
 }
 
 /**
- * Informative element interface
- * Elements that exchange internal data with users
- * 
- * @deprecated Use InformativeElementInfo instead (Phase G)
- * 
- * This interface is DEPRECATED and kept only for backward compatibility.
- * It lacks critical properties (file, elementType) and uses incorrect dataBindings type (DataBinding[] vs string[]).
- * 
- * Use InformativeElementInfo which:
- * - Includes file property (required for edge creation)
- * - Includes elementType property (required for node categorization)
- * - Uses string[] for dataBindings (correct format from AST parser)
- * - Aligns with ComponentInfo.informativeElements type
- */
-export interface InformativeElement {
-  type: ElementType;
-  name: string;
-  props: Record<string, unknown>;
-  eventHandlers: EventHandler[];
-  dataBindings: DataBinding[];
-  line?: number;
-  column?: number;
-}
-
-/**
  * Element type definitions
  */
 export type ElementType = "display" | "input" | "data-source" | "state-management";
@@ -545,15 +542,6 @@ export interface EventHandler {
   name: string;        // Event name: "onClick", "onChange", "onSubmit"
   type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
   handler: string;     // Function(s) called: "handleClick" or "validateInput, callAPI" for multiple calls
-}
-
-/**
- * Data binding interface
- */
-export interface DataBinding {
-  source: string;
-  target: string;
-  type: string;
 }
 
 /**

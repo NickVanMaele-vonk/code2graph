@@ -493,7 +493,7 @@ interface ComponentInfo {
   state: StateInfo[];
   hooks: HookInfo[];
   children: ComponentInfo[];
-  informativeElements: InformativeElement[];
+  informativeElements: InformativeElementInfo[]; // UPDATED: Uses InformativeElementInfo with all required properties
   renderLocations?: RenderLocation[]; // JSX instances stored as metadata, not separate nodes
 }
 
@@ -503,25 +503,25 @@ interface RenderLocation {
   context: string; // e.g., "ReactDOM.render", "JSX usage"
 }
 
-interface InformativeElement {
-  type: ElementType;
+interface InformativeElementInfo {
+  type: 'display' | 'input' | 'data-source' | 'state-management';
   name: string;
-  props: Record<string, any>;
+  elementType: string;
+  props: Record<string, unknown>;
   eventHandlers: EventHandler[]; // Full objects with handler analysis details
-  dataBindings: DataBinding[];
+  dataBindings: string[]; // Array of data source names
+  line?: number;
+  column?: number;
+  file: string; // Required for edge creation
   parentComponent?: string; // Name of the component that contains this element (tracked via AST scope)
+  semanticIdentifier?: string; // Semantic name from aria-label, data-testid, id, or text content
+  hasSemanticIdentifier?: boolean; // Quick flag for filtering decisions
 }
 
 interface EventHandler {
   name: string;        // Event name: "onClick", "onChange", "onSubmit"
   type: string;        // Handler type: "function-reference", "arrow-function", "function-expression"
   handler: string;     // Function(s) called: "handleClick" or "func1, func2, func3"
-}
-
-interface DataBinding {
-  source: string;      // Data source variable or prop
-  target: string;      // Target element or display location
-  type: string;        // Binding type
 }
 ```
 

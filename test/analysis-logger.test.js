@@ -15,14 +15,27 @@ describe('AnalysisLogger', () => {
   let testRepoUrl;
 
   beforeEach(async () => {
-    testRepoUrl = 'https://github.com/testuser/testrepo';
-    logger = new AnalysisLogger(testRepoUrl);
-    
-    // Root cause fix: Ensure log directory exists before each test
+    // Use a unique repository URL for each test to avoid log file conflicts
+    // across different test suites that might run in parallel
+    testRepoUrl = `https://github.com/testuser/testrepo-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+    // Create a temporary logger just to get the log path for cleanup
+    const tempLogger = new AnalysisLogger(testRepoUrl);
+    const logPath = tempLogger.getLogPath();
+    const logDir = path.dirname(logPath);
+
+    // Ensure log directory exists before each test
     // This prevents race conditions where afterEach cleanup from previous test
     // might still be running when this test starts
-    const logDir = path.dirname(logger.getLogPath());
     await fs.ensureDir(logDir);
+
+    // Remove any existing log file to ensure clean state
+    if (await fs.pathExists(logPath)) {
+      await fs.remove(logPath);
+    }
+
+    // Now create the logger for the test
+    logger = new AnalysisLogger(testRepoUrl);
   });
 
   afterEach(async () => {
@@ -36,7 +49,8 @@ describe('AnalysisLogger', () => {
   describe('Log File Creation', () => {
     test('should create log file with correct name', () => {
       const logPath = logger.getLogPath();
-      assert(logPath.includes('testrepo-analysis.log'));
+      assert(logPath.includes('testrepo-'));
+      assert(logPath.includes('-analysis.log'));
       assert(logPath.includes('log'));
     });
 
@@ -188,34 +202,26 @@ describe('AnalysisLogger', () => {
     });
 
     test('should log memory usage', async () => {
-      // Root cause fix: Ensure clean log file state before test
-      // This prevents interference from previous tests that may have written to the same file
-      const logPath = logger.getLogPath();
-      if (await fs.pathExists(logPath)) {
-        await fs.remove(logPath);
-      }
-      
       const memoryInfo = {
         used: 1024000,
         total: 2048000,
         percentage: 50
       };
-      
+
       await logger.logMemoryUsage(memoryInfo);
-      
-      // Verify log file was created
-      assert(await fs.pathExists(logPath), 'Log file should exist after logging');
-      
+
+      // Phase G: Add delay to ensure file write completes on Windows
+      // Windows file system can have timing issues with immediate read after write
+      // using appendFile (EPERM errors when file handle not yet released)
+      // Increased delay for full test suite execution where timing is more critical
+      await new Promise(resolve => setTimeout(resolve, 250));
+
+      const logPath = logger.getLogPath();
+      assert(await fs.pathExists(logPath));
+
       const logContent = await fsBuiltin.readFile(logPath, 'utf-8');
-      
-      // Debug: Log the actual content if assertion fails
-      if (!logContent.includes('Memory usage')) {
-        console.log('Log file content:', logContent);
-        console.log('Log file path:', logPath);
-      }
-      
-      assert(logContent.includes('Memory usage'), 'Log should contain "Memory usage"');
-      assert(logContent.includes('1024000'), 'Log should contain memory value');
+      assert(logContent.includes('Memory usage'), `Expected log to contain 'Memory usage'. Actual content: ${logContent}`);
+      assert(logContent.includes('1024000'));
     });
 
     test('should log configuration', async () => {

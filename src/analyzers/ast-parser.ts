@@ -34,6 +34,7 @@ import {
   SectionType
 } from '../types/index.js';
 import { AnalysisLogger } from './analysis-logger.js';
+import { ReactAnalyzerImpl } from './react-analyzer.js';
 
 /**
  * AST Parser class
@@ -42,7 +43,8 @@ import { AnalysisLogger } from './analysis-logger.js';
  */
 export class ASTParserImpl {
   private logger?: AnalysisLogger;
-  
+  private reactAnalyzer: ReactAnalyzerImpl;
+
   /**
    * Router detection patterns for different frameworks
    * Phase 2: Router Detection (Change Request 002)
@@ -150,6 +152,7 @@ export class ASTParserImpl {
    */
   constructor(logger?: AnalysisLogger) {
     this.logger = logger;
+    this.reactAnalyzer = new ReactAnalyzerImpl(logger);
   }
 
   /**
